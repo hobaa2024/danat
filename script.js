@@ -28,9 +28,24 @@ class DatabaseManager {
             console.log('☁️ Connecting to Firebase...');
             this.updateCloudStatus('connecting');
 
+            // Monitor actual connection state
+            CloudDB.monitorConnection((isConnected) => {
+                if (!isConnected) {
+                    // Only show connecting if we are not already in error state
+                    console.log('🔥 Disconnected from Firebase');
+                }
+            });
+
             CloudDB.listenForUpdates(remoteStudents => {
                 this.updateCloudStatus('online');
                 this.mergeRemoteData(remoteStudents);
+            }, (error) => {
+                console.error("Sync Error:", error);
+                this.updateCloudStatus('offline');
+                if (typeof UI !== 'undefined' && UI.showNotification) {
+                    let msg = error.code === 'PERMISSION_DENIED' ? 'خطأ: لا تملك صلاحية الوصول (تحقق من Rules)' : 'خطأ في المزامنة';
+                    UI.showNotification('⚠️ ' + msg);
+                }
             });
 
             // Check connectivity
@@ -51,6 +66,15 @@ class DatabaseManager {
                 }
                 sessionStorage.setItem('initialSyncDone', 'true');
             }
+
+            // Sync Settings from Cloud
+            CloudDB.getSettings().then(cloudSettings => {
+                if (cloudSettings) {
+                    console.log('☁️ Settings synced from cloud');
+                    localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
+                    // No UI refresh needed here as settings are loaded on demand usually, but we can force reload if on settings page
+                }
+            });
         } else {
             this.updateCloudStatus('disabled');
         }

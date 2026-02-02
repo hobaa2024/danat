@@ -102,7 +102,7 @@ const CloudDB = {
     },
 
     // Listen for real-time updates
-    listenForUpdates(callback) {
+    listenForUpdates(callback, errorCallback) {
         if (!firebaseDb) return;
 
         firebaseDb.ref('students').on('value', snapshot => {
@@ -110,6 +110,17 @@ const CloudDB = {
             const students = data ? Object.values(data) : [];
             console.log('☁️ Real-time update received:', students.length, 'students');
             callback(students);
+        }, (error) => {
+            console.error('Cloud listen error:', error);
+            if (errorCallback) errorCallback(error);
+        });
+    },
+
+    // Monitor connection state
+    monitorConnection(callback) {
+        if (!firebaseDb) return;
+        firebaseDb.ref(".info/connected").on("value", (snap) => {
+            callback(!!snap.val());
         });
     },
 
@@ -170,6 +181,16 @@ const CloudDB = {
     },
 
     // --- CONTRACT TEMPLATES CLOUD SYNC ---
+
+    getSettings() {
+        if (!firebaseDb) return Promise.resolve(null);
+        return firebaseDb.ref('settings/appSettings').once('value')
+            .then(snapshot => snapshot.val())
+            .catch(err => {
+                console.error('Cloud fetch settings error:', err);
+                return null;
+            });
+    },
 
     saveSettings(settings) {
         if (!firebaseDb) return Promise.resolve(false);
