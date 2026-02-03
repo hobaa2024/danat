@@ -822,6 +822,8 @@ const ContractUI = {
                 const text = await file.text();
                 processText(text);
             } else if (file.type === 'application/pdf') {
+                // تنبيه المستخدم بأن استخراج النص العربي قد لا يعمل بشكل جيد
+                alert('تنبيه: استخراج النصوص العربية من ملفات PDF قد يظهر رموزاً غير مفهومة بسبب تشفير الملفات.\n\nللحفاظ على شكل العقد وتنسيقه، ننصح باستخدام خيار "قالب PDF" من القائمة العلوية (التبويب الثالث) بدلاً من هذا الخيار.');
                 const text = await this.extractTextFromPdf(file);
                 processText(text);
             } else {

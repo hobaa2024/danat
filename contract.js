@@ -228,10 +228,18 @@ async function loadStudentData() {
                 }
 
                 // Fallback to default local if still null
-                if (!contract) contract = templates.find(c => c.isDefault) || templates[0];
+                if (!contract) {
+                    contract = templates.find(c => c.isDefault) || templates[0];
+                    if (contract) console.log('🏠 Using local fallback template:', contract.title);
+                }
             }
         }
 
+        // Final sanity check for template
+        if (!contract && typeof CloudDB !== 'undefined' && CloudDB.isReady() && student.contractTemplateId) {
+            console.log('🔄 Retrying template fetch...');
+            contract = await CloudDB.getContractTemplate(student.contractTemplateId);
+        }
         if (contract) {
             const contractTextDiv = document.querySelector('.contract-text');
             if (contractTextDiv) {
@@ -239,7 +247,15 @@ async function loadStudentData() {
                 const isPdf = (contract.type === 'pdf_template') ||
                     (contract.content && contract.content.startsWith('قالب PDF:'));
 
-                if (isPdf) {
+                if (isPdf && !contract.pdfData) {
+                    console.warn("⚠️ PDF template detected but pdfData is missing. Attempting deep fetch...");
+                    if (typeof CloudDB !== 'undefined' && CloudDB.isReady() && contract.id) {
+                        const full = await CloudDB.getContractTemplate(contract.id);
+                        if (full && full.pdfData) contract = full;
+                    }
+                }
+
+                if (isPdf && contract.pdfData) {
                     // PDF Template Mode
                     contractTextDiv.innerHTML = `
                         <div style="text-align:center; padding: 20px;">
@@ -794,18 +810,33 @@ async function generatePdfFromTemplate(template, studentData) {
         throw new Error("بيانات القالب غير متوفرة");
     }
 
-    // 1. Get Font (Cached) - Use a reliable TTF source for Cairo
+    // 1. Get Font (Cached) - Bulletproof loading
     if (!cachedCairoFont) {
-        try {
-            // Using a static TTF version of Cairo from a CDN that supports it
-            cachedCairoFont = await fetch('https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf').then(res => res.arrayBuffer());
-            console.log("✅ Arabic Font Loaded (TTF)");
-        } catch (e) {
-            console.warn("Cairo TTF loading failed, attempting WOFF2 fallback", e);
+        const fontUrls = [
+            'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
+            'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf',
+            'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf'
+        ];
+
+        for (const url of fontUrls) {
             try {
-                cachedCairoFont = await fetch('https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.woff2').then(res => res.arrayBuffer());
-            } catch (err) { console.error("All font loads failed"); }
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const buf = await resp.arrayBuffer();
+                    if (buf.byteLength > 10000) {
+                        cachedCairoFont = buf;
+                        console.log("✅ Arabic Font Loaded (TTF) from:", url);
+                        break;
+                    }
+                }
+            } catch (e) {
+                console.warn(`Font load attempt failed for ${url}`);
+            }
         }
+    }
+
+    if (!cachedCairoFont) {
+        throw new Error("تعذر تحميل خطوط العقد. يرجى التحقق من جودة الاتصال.");
     }
 
     // 2. Load the template
