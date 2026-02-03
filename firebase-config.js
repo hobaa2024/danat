@@ -1,26 +1,19 @@
 // Firebase Configuration for Dana Al-Oloom Schools
 // ================================================
 // 
-// لتفعيل Firebase، اتبع الخطوات التالية:
-// 
-// 1. اذهب إلى https://console.firebase.google.com
-// 2. أنشئ مشروع جديد (Create Project)
-// 3. من القائمة الجانبية اختر "Build" ثم "Realtime Database"
-// 4. اضغط "Create Database" واختر "Start in test mode"
-// 5. من إعدادات المشروع (Project Settings) > General > Your apps
-// 6. اضغط على أيقونة الويب </> لإضافة تطبيق ويب
-// 7. انسخ قيم الـ config وضعها هنا بدلاً من القيم الفارغة أدناه
+// تم تحديث الإعدادات لربط المشروع الجديد
+// التاريخ: 3 فبراير 2026
 //
 // ================================================
 
 const firebaseConfig = {
-    apiKey: "AIzaSyAMuB5wgf8NyAOKs3n9ooQHQZ-Z-UJGvt4",
-    authDomain: "danataluloom-schools.firebaseapp.com",
-    databaseURL: "https://danataluloom-schools-default-rtdb.firebaseio.com",
-    projectId: "danataluloom-schools",
-    storageBucket: "danataluloom-schools.firebasestorage.app",
-    messagingSenderId: "1019874658158",
-    appId: "1:1019874658158:web:48beaacade0578f4f7a37f"
+    apiKey: "AIzaSyA3GLLj6aldf4wE83TyxY79C886j2RlYzc",
+    authDomain: "danataluloom-schools-4c7f8.firebaseapp.com",
+    databaseURL: "https://danataluloom-schools-4c7f8-default-rtdb.firebaseio.com",
+    projectId: "danataluloom-schools-4c7f8",
+    storageBucket: "danataluloom-schools-4c7f8.firebasestorage.app",
+    messagingSenderId: "801441736400",
+    appId: "1:801441736400:web:f860b5a553f6122a81e0d5"
 };
 
 // Check if Firebase is configured
@@ -124,6 +117,25 @@ const CloudDB = {
         });
     },
 
+    runHealthCheck() {
+        if (!firebaseDb) return Promise.reject({ code: 'NO_FIREBASE', message: 'Firebase not configured' });
+
+        const healthRef = firebaseDb.ref('health_check/' + Date.now());
+
+        return healthRef.set('ping')
+            .then(() => {
+                // If set is successful, remove the test data
+                return healthRef.remove();
+            })
+            .then(() => {
+                // If remove is successful, permissions are OK
+                return { success: true };
+            })
+            .catch(err => {
+                // Any failure in set/remove likely means a permission issue
+                return Promise.reject(err);
+            });
+    },
     // Sync local data to cloud (admin use)
     syncLocalToCloud() {
         if (!firebaseDb) {

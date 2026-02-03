@@ -5,6 +5,7 @@ class ContractManager {
         this.variables = [
             { key: '{اسم_الطالب}', label: 'اسم الطالب' },
             { key: '{اسم_ولي_الامر}', label: 'اسم ولي الأمر' },
+            { key: '{المسار}', label: 'المسار التعليمي' },
             { key: '{الصف}', label: 'الصف الدراسي' },
             { key: '{السنة_الدراسية}', label: 'السنة الدراسية' },
             { key: '{البريد_الالكتروني}', label: 'البريد الإلكتروني' },
@@ -60,6 +61,7 @@ class ContractManager {
         let result = content;
         result = result.replace(/{اسم_الطالب}/g, studentData.studentName || '');
         result = result.replace(/{اسم_ولي_الامر}/g, studentData.parentName || '');
+        result = result.replace(/{المسار}/g, studentData.customFields?.studentTrack || studentData.studentTrack || '');
         result = result.replace(/{الصف}/g, studentData.studentGrade || '');
         result = result.replace(/{السنة_الدراسية}/g, studentData.contractYear || '');
         result = result.replace(/{البريد_الالكتروني}/g, studentData.parentEmail || '');
@@ -186,6 +188,7 @@ class ContractManager {
             // Replace variables
             if (text === '{اسم_الطالب}') text = studentData.studentName || '';
             else if (text === '{اسم_ولي_الامر}') text = studentData.parentName || '';
+            else if (text === '{المسار}') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
             else if (text === '{الصف}') text = studentData.studentGrade || '';
             else if (text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
             else if (text === '{السنة_الدراسية}') text = studentData.contractYear || '';
@@ -487,6 +490,7 @@ const ContractUI = {
         const standard = [
             { key: '{اسم_الطالب}', label: 'اسم الطالب' },
             { key: '{اسم_ولي_الامر}', label: 'اسم ولي الأمر' },
+            { key: '{المسار}', label: 'المسار' },
             { key: '{الصف}', label: 'الصف' },
             { key: '{المرحلة_الدراسية}', label: 'المرحلة' },
             { key: '{السنة_الدراسية}', label: 'السنة' },

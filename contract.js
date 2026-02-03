@@ -297,6 +297,7 @@ async function loadStudentData() {
                     const replacements = {
                         '{اسم_الطالب}': student.studentName || '',
                         '{اسم_ولي_الامر}': student.parentName || '',
+                        '{المسار}': student.customFields?.studentTrack || student.studentTrack || '',
                         '{الصف}': student.studentGrade ? `الصف ${student.studentGrade}` : '',
                         '{المرحلة_الدراسية}': student.studentLevel || '',
                         '{السنة_الدراسية}': student.contractYear || '',
@@ -878,6 +879,7 @@ async function generatePdfFromTemplate(template, studentData) {
         // Basic Replacements
         if (text === '{اسم_الطالب}') text = studentData.studentName || '';
         else if (text === '{اسم_ولي_الامر}') text = studentData.parentName || '';
+        else if (text === '{المسار}') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
         else if (text === '{الصف}') text = studentData.studentGrade || '';
         else if (text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
         else if (text === '{السنة_الدراسية}') text = studentData.contractYear || '';

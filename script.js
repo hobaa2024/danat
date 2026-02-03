@@ -48,6 +48,23 @@ class DatabaseManager {
                 }
             });
 
+            // NEW: Run a health check to verify permissions
+            CloudDB.runHealthCheck().then(result => {
+                if (result.success) {
+                    console.log('✅ Firebase Health Check Passed. Permissions are OK.');
+                    // The listenForUpdates will handle the 'online' status
+                }
+            }).catch(error => {
+                console.error('🔥 Firebase Health Check FAILED:', error);
+                this.updateCloudStatus('offline');
+                if (error.code === 'PERMISSION_DENIED') {
+                    UI.showPermanentError(
+                        'فشل الاتصال بالسحابة: صلاحيات الوصول مرفوضة',
+                        'يبدو أن قواعد الأمان (Security Rules) في Firebase قد انتهت صلاحيتها. هذا يمنع المزامنة وعمل فورم جوجل. يرجى الذهاب إلى لوحة تحكم Firebase وتحديث القواعد.'
+                    );
+                }
+            });
+
             // Check connectivity
             setTimeout(() => {
                 if (!CloudDB.isReady()) {
@@ -83,25 +100,45 @@ class DatabaseManager {
     updateCloudStatus(status) {
         const dot = document.getElementById('cloudStatusDot');
         const text = document.getElementById('cloudStatusText');
-        if (!dot || !text) return;
+        const settingsBadge = document.getElementById('cloudStatusSettings');
+
+        let color = '#94a3b8';
+        let label = 'غير معروف';
+        let badgeClass = 'status-badge';
 
         switch (status) {
             case 'online':
-                dot.style.background = '#10b981';
-                text.textContent = 'متصل سحابياً';
+                color = '#10b981';
+                label = 'متصل سحابياً';
+                badgeClass += ' status-verified'; // Green style
                 break;
             case 'connecting':
-                dot.style.background = '#f59e0b';
-                text.textContent = 'جاري المزامنة...';
+                color = '#f59e0b';
+                label = 'جاري المزامنة...';
+                badgeClass += ' status-pending'; // Orange style
                 break;
             case 'offline':
-                dot.style.background = '#ef4444';
-                text.textContent = 'غير متصل (محلي)';
+                color = '#ef4444';
+                label = 'غير متصل (محلي)';
+                badgeClass += ' status-sent'; // Red/Gray style (using sent for now or custom)
                 break;
             case 'disabled':
-                dot.style.background = '#94a3b8';
-                text.textContent = 'السحابة معطلة';
+                color = '#94a3b8';
+                label = 'السحابة معطلة';
                 break;
+        }
+
+        // Update Navbar
+        if (dot) dot.style.background = color;
+        if (text) text.textContent = label;
+
+        // Update Settings Page Badge
+        if (settingsBadge) {
+            settingsBadge.textContent = label;
+            settingsBadge.className = badgeClass;
+            // Manual override for offline/disabled colors if needed
+            if (status === 'offline') settingsBadge.style.backgroundColor = '#fee2e2';
+            if (status === 'offline') settingsBadge.style.color = '#991b1b';
         }
     }
 
@@ -880,6 +917,36 @@ const UI = {
         }, 3000);
     },
 
+    showPermanentError(title, message) {
+        let errorBanner = document.getElementById('permanentErrorBanner');
+        if (!errorBanner) {
+            errorBanner = document.createElement('div');
+            errorBanner.id = 'permanentErrorBanner';
+            errorBanner.style.cssText = `
+                background: #fef2f2;
+                color: #991b1b;
+                padding: 1rem;
+                border-bottom: 4px solid #ef4444;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                z-index: 100000;
+                text-align: center;
+                font-family: 'Cairo', sans-serif;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            `;
+            document.body.prepend(errorBanner);
+        }
+        errorBanner.innerHTML = `
+            <div style="position: relative; max-width: 800px; margin: 0 auto; padding-right: 30px;">
+                <button onclick="this.parentElement.parentElement.style.display='none'" style="position: absolute; right: -10px; top: -5px; background: none; border: none; font-size: 24px; cursor: pointer; color: #991b1b;">&times;</button>
+                <h3 style="margin: 0 0 0.2rem 0; font-size: 1.1rem; font-weight: bold;">${title}</h3>
+                <p style="margin: 0; font-size: 0.85rem; opacity: 0.9;">${message}</p>
+            </div>
+        `;
+        errorBanner.style.display = 'block';
+    },
     async downloadContractPdf(id) {
         const student = db.getStudents().find(s => s.id === id);
         if (!student) return;
