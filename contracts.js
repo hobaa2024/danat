@@ -189,9 +189,12 @@ class ContractManager {
             if (this.cachedFont) {
                 customFont = await pdfDoc.embedFont(this.cachedFont);
             } else {
+                console.warn("⚠️ Arabic font failed to load. Falling back to Helvetica.");
+                alert("تنبيه: تعذر تحميل الخط العربي (Cairo). ستظهر النصوص العربية كرموز '؟'.\nيرجى التحقق من الاتصال بالإنترنت.");
                 customFont = await pdfDoc.embedStandardFont('Helvetica');
             }
         } catch (e) {
+            console.error("Font embed error:", e);
             customFont = await pdfDoc.embedStandardFont('Helvetica');
         }
 
@@ -294,13 +297,28 @@ class ContractManager {
                 }
             } else {
                 // Draw Text with fixed Arabic
-                page.drawText(fixArabic(text), {
-                    x: pdfX,
-                    y: pdfY - 14, // Roughly adjust for font height
-                    size: 11,
-                    font: customFont,
-                    color: rgb(0, 0, 0)
-                });
+                try {
+                    page.drawText(fixArabic(text), {
+                        x: pdfX,
+                        y: pdfY - 14, // Roughly adjust for font height
+                        size: 11,
+                        font: customFont,
+                        color: rgb(0, 0, 0)
+                    });
+                } catch (err) {
+                    console.warn("PDF Draw Error (Encoding):", err);
+                    // Fallback: Draw sanitized text to prevent crash
+                    const safeText = String(text).replace(/[^\x00-\x7F]/g, "?");
+                    try {
+                        page.drawText(safeText, {
+                            x: pdfX,
+                            y: pdfY - 14,
+                            size: 11,
+                            font: customFont,
+                            color: rgb(0, 0, 0)
+                        });
+                    } catch (e) { }
+                }
             }
         }
 

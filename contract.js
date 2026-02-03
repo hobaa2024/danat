@@ -874,35 +874,35 @@ async function generatePdfFromTemplate(template, studentData) {
         console.warn("Fontkit registration failed", e);
     }
 
+    if (!cachedCairoFont) {
+        throw new Error("فشل تحميل خطوط العقد. يرجى التأكد من اتصال الإنترنت.");
+    }
+
     let customFont;
     try {
-        if (cachedCairoFont) {
-            customFont = await pdfDoc.embedFont(cachedCairoFont);
-        } else {
-            customFont = await pdfDoc.embedStandardFont('Helvetica');
-        }
+        customFont = await pdfDoc.embedFont(cachedCairoFont);
     } catch (e) {
-        console.warn("Failed to embed font, using Helvetica", e);
-        customFont = await pdfDoc.embedStandardFont('Helvetica');
+        console.error("Font embedding failed", e);
+        throw new Error("فشل دمج الخط في المستند. يرجى المحاولة مرة أخرى.");
     }
 
     const pages = pdfDoc.getPages();
+    // High-Precision Arabic Shaper
     const fixArabic = (text) => {
         if (!text) return "";
         let processedText = String(text);
 
-        // Robust check for ArabicReshaper
-        let reshaper = null;
-        if (typeof ArabicReshaper !== 'undefined') {
-            if (typeof ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper;
-            else if (ArabicReshaper.ArabicReshaper && typeof ArabicReshaper.ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper.ArabicReshaper;
-        }
+        // Robust check for ArabicReshaper in all possible global locations
+        let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : null;
+        if (reshaper && reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
 
-        if (reshaper) {
-            // Reshape (connect letters)
+        if (reshaper && typeof reshaper.convertArabic === 'function') {
             processedText = reshaper.convertArabic(processedText);
+        } else if (window.ArabicReshaper && typeof window.ArabicReshaper.convertArabic === 'function') {
+            processedText = window.ArabicReshaper.convertArabic(processedText);
         }
 
+        // Reverse for RTL rendering in pdf-lib
         return processedText.split('').reverse().join('');
     };
 
@@ -974,10 +974,8 @@ async function generatePdfFromTemplate(template, studentData) {
             try {
                 page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 12, size: 10, font: customFont });
             } catch (encodingError) {
-                console.warn("Encoding error for text:", text, encodingError);
-                // Last ditch effort: Try without any special characters if encoding fails
-                const safeText = String(text).replace(/[^\x00-\x7F]/g, "?");
-                page.drawText(safeText, { x: pdfX, y: pdfY - 12, size: 10 });
+                console.error("Encoding error for text:", text, encodingError);
+                // Don't try to draw with standard font, just skip or log
             }
         }
     }
