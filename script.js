@@ -73,27 +73,38 @@ class DatabaseManager {
             }, 5000);
 
             if (!sessionStorage.getItem('initialSyncDone')) {
-                const localData = this.getStudents();
-                if (localData.length > 0) {
-                    CloudDB.getStudents().then(cloudData => {
-                        if (cloudData.length === 0) {
-                            CloudDB.syncLocalToCloud();
-                        }
-                    });
-                }
+                const localStudents = this.getStudents();
+                const localTemplates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+
+                CloudDB.getStudents().then(cloudStudents => {
+                    if (cloudStudents.length === 0 && localStudents.length > 0) {
+                        console.log('☁️ Syncing students to new cloud...');
+                        CloudDB.syncLocalToCloud();
+                    }
+                });
+
+                CloudDB.getContractTemplates().then(cloudTemplates => {
+                    if (cloudTemplates.length === 0 && localTemplates.length > 0) {
+                        console.log('☁️ Syncing templates to new cloud...');
+                        localTemplates.forEach(t => CloudDB.saveContractTemplate(t));
+                    }
+                });
+
                 sessionStorage.setItem('initialSyncDone', 'true');
             }
 
-            // Sync Settings from Cloud
             CloudDB.getSettings().then(cloudSettings => {
-                if (cloudSettings) {
+                const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                if (!cloudSettings && Object.keys(localSettings).length > 5) {
+                    console.log('☁️ Syncing settings to new cloud...');
+                    CloudDB.saveSettings(localSettings);
+                } else if (cloudSettings) {
                     console.log('☁️ Settings synced from cloud');
                     localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
-                    // No UI refresh needed here as settings are loaded on demand usually, but we can force reload if on settings page
+                    if (typeof UI !== 'undefined' && UI.applyBranding) UI.applyBranding();
                 }
             });
-        } else {
-            this.updateCloudStatus('disabled');
+
         }
     }
 
@@ -953,7 +964,13 @@ const UI = {
 
         // Determine Contract Type
         const templateId = student.contractTemplateId;
-        const template = templateId ? contractMgr.getContract(templateId) : contractMgr.getDefaultContract();
+        let template = templateId ? contractMgr.getContract(templateId) : null;
+        if (!template) template = contractMgr.getDefaultContract();
+
+        if (!template) {
+            this.showNotification('⚠️ عذراً، لم يتم العثور على قالب العقد لهذا الطالب');
+            return;
+        }
 
         if (template && template.type === 'pdf_template') {
             this.showNotification('جاري إنشاء ملف PDF...');
@@ -1224,58 +1241,70 @@ const UI = {
     },
 
     async previewContract(id) {
-        const students = db.getStudents();
-        const student = students.find(s => s.id === id);
-        if (!student) return;
+        try {
+            const students = db.getStudents();
+            const student = students.find(s => s.id === id);
+            if (!student) throw new Error("الطالب غير موجود");
 
-        const templateId = student.contractTemplateId;
-        const template = (typeof contractMgr !== 'undefined')
-            ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
-            : null;
+            const templateId = student.contractTemplateId;
+            let template = (typeof contractMgr !== 'undefined')
+                ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
+                : null;
 
-        // Check for PDF Template (More robust check)
-        const isPdfTemplate = (template && template.type === 'pdf_template') ||
-            (template && template.content && template.content.startsWith('قالب PDF:')) ||
-            (student.contractType === 'pdf_template');
-
-        if (isPdfTemplate) {
-            if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('جاري تحضير المعاينة...');
-            try {
-                const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
-                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                const blobUrl = window.URL.createObjectURL(blob);
-                window.open(blobUrl, '_blank');
-            } catch (err) {
-                console.error("Preview Error:", err);
-                alert("حدث خطأ أثناء معاينة PDF: " + err.message);
+            if (!template) {
+                const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
             }
-            return;
-        }
 
-        // Standard HTML Preview
-        const html = this.getContractSummaryHTML(student);
-        const w = window.open('', '_blank');
-        if (w) {
-            w.document.write(`
-                <html><head><title>معاينة العقد - ${student.studentName}</title>
-                <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
-                <style>
-                    body { background: #cbd5e0; display: flex; justify-content: center; padding: 2cm 0; margin: 0; direction: rtl; }
-                    .preview-wrap { background: white; box-shadow: 0 0 20px rgba(0,0,0,0.2); width: 210mm; min-height: 297mm; }
-                    @media print {
-                        body { background: white; padding: 0; }
-                        .preview-wrap { box-shadow: none; width: 100%; }
-                    }
-                </style>
-                </head>
-                <body>
-                    <div class="preview-wrap">${html}</div>
-                </body>
-                </html>
-            `);
-            w.document.close();
-        } else {
-            alert('يرجى السماح بالنوافذ المنبثقة لمعاينة العقد.');
+            if (!template) throw new Error("قالب العقد غير موجود");
+
+            // Check for PDF Template (More robust check)
+            const isPdfTemplate = (template && template.type === 'pdf_template') ||
+                (template && template.content && template.content.startsWith('قالب PDF:')) ||
+                (student.contractType === 'pdf_template');
+
+            if (isPdfTemplate) {
+                if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('جاري تحضير المعاينة...');
+                try {
+                    const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
+                    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    window.open(blobUrl, '_blank');
+                } catch (err) {
+                    console.error("Preview Error:", err);
+                    alert("حدث خطأ أثناء معاينة PDF: " + err.message);
+                }
+                return;
+            }
+
+            // Standard HTML Preview
+            const html = this.getContractSummaryHTML(student);
+            const w = window.open('', '_blank');
+            if (w) {
+                w.document.write(`
+                    <html><head><title>معاينة العقد - ${student.studentName}</title>
+                    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+                    <style>
+                        body { background: #cbd5e0; display: flex; justify-content: center; padding: 2cm 0; margin: 0; direction: rtl; }
+                        .preview-wrap { background: white; box-shadow: 0 0 20px rgba(0,0,0,0.2); width: 210mm; min-height: 297mm; }
+                        @media print {
+                            body { background: white; padding: 0; }
+                            .preview-wrap { box-shadow: none; width: 100%; }
+                        }
+                    </style>
+                    </head>
+                    <body>
+                        <div class="preview-wrap">${html}</div>
+                    </body>
+                    </html>
+                `);
+                w.document.close();
+            } else {
+                alert('يرجى السماح بالنوافذ المنبثقة لمعاينة العقد.');
+            }
+        } catch (err) {
+            console.error("Preview Error:", err);
+            alert("حدث خطأ أثناء معاينة العقد: " + err.message);
         }
     },
 
@@ -1310,11 +1339,11 @@ const UI = {
         }
 
         const msg = `* عقد تسجيل إلكتروني - مدارس دانة العلوم * 📝
-            
-مرحباً ${student.parentName || ''},
-يرجى الاطلاع على عقد التسجيل الخاص بالطالب / ة: * ${student.studentName}*
 
-            للتعميد والتوقيع، يرجى الضغط على الرابط التالي:
+                    مرحباً ${student.parentName || ''},
+                    يرجى الاطلاع على عقد التسجيل الخاص بالطالب / ة: * ${student.studentName} *
+
+                للتعميد والتوقيع، يرجى الضغط على الرابط التالي:
 🔗 اضغط هنا للتوقيع 🔗
 ${link}
 

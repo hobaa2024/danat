@@ -227,8 +227,8 @@ async function loadStudentData() {
                     }
                 }
 
-                // Fallback to first local or null
-                if (!contract) contract = templates[0];
+                // Fallback to default local if still null
+                if (!contract) contract = templates.find(c => c.isDefault) || templates[0];
             }
         }
 
