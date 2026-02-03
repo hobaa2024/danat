@@ -150,18 +150,50 @@ class ContractManager {
         }
 
         const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
-        pdfDoc.registerFontkit(fontkit);
+
+        // FIX: Ensure fontkit is registered to prevent text overlapping
+        if (window.fontkit) {
+            pdfDoc.registerFontkit(window.fontkit);
+        } else if (typeof fontkit !== 'undefined') {
+            pdfDoc.registerFontkit(fontkit);
+        } else {
+            console.warn("⚠️ Fontkit library missing! Arabic text will overlap.");
+        }
 
         // Load Arabic Font (Cairo) with caching
         if (!this.cachedFont) {
-            try {
-                this.cachedFont = await fetch('https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf').then(res => res.arrayBuffer());
-            } catch (e) {
-                console.warn("Falling back to woff2 font", e);
-                this.cachedFont = await fetch('https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.woff2').then(res => res.arrayBuffer());
+            // FIX: Robust Font Loading (Try multiple sources)
+            const fontUrls = [
+                'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
+                'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf',
+                'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf'
+            ];
+
+            for (const url of fontUrls) {
+                try {
+                    const resp = await fetch(url);
+                    if (resp.ok) {
+                        const buf = await resp.arrayBuffer();
+                        if (buf.byteLength > 10000) {
+                            this.cachedFont = buf;
+                            console.log("✅ Font loaded from:", url);
+                            break;
+                        }
+                    }
+                } catch (e) { console.warn("Font fetch failed", url); }
             }
         }
-        const customFont = await pdfDoc.embedFont(this.cachedFont);
+
+        let customFont;
+        try {
+            if (this.cachedFont) {
+                customFont = await pdfDoc.embedFont(this.cachedFont);
+            } else {
+                customFont = await pdfDoc.embedStandardFont('Helvetica');
+            }
+        } catch (e) {
+            customFont = await pdfDoc.embedStandardFont('Helvetica');
+        }
 
         const pages = pdfDoc.getPages();
 
@@ -170,13 +202,20 @@ class ContractManager {
             if (!text) return "";
             let processedText = String(text);
 
-            // Use ArabicReshaper if available (Loaded in index.html)
-            if (typeof ArabicReshaper !== 'undefined' && ArabicReshaper.convertArabic) {
-                // Reshape (connect letters)
-                processedText = ArabicReshaper.convertArabic(processedText);
-                // Reverse for RTL rendering in LTR context
-                return processedText.split('').reverse().join('');
+            // Robust check for ArabicReshaper
+            let reshaper = null;
+            if (typeof ArabicReshaper !== 'undefined') {
+                if (typeof ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper;
+                else if (ArabicReshaper.ArabicReshaper && typeof ArabicReshaper.ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper.ArabicReshaper;
             }
+
+            if (reshaper) {
+                // Reshape (connect letters)
+                processedText = reshaper.convertArabic(processedText);
+            } else {
+                console.warn("⚠️ ArabicReshaper library missing! Text will be disconnected.");
+            }
+            // Reverse for RTL rendering in LTR context
             return processedText.split('').reverse().join('');
         };
 
@@ -1519,6 +1558,9 @@ function injectDebugConsole() {
         const missing = [];
         if (typeof mammoth === 'undefined') missing.push("Mammoth (Word)");
         if (typeof pdfjsLib === 'undefined') missing.push("PDF.js");
+        if (typeof PDFLib === 'undefined') missing.push("PDF-Lib");
+        if (typeof fontkit === 'undefined') missing.push("Fontkit");
+        if (typeof ArabicReshaper === 'undefined') missing.push("ArabicReshaper");
 
         if (missing.length > 0) {
             const warning = document.createElement('div');

@@ -533,14 +533,13 @@ function setupPdfDownload(studentName, contractNo) {
                 element.style.height = '100vh';
                 element.style.background = 'white';
                 element.style.zIndex = '100000';
-                element.style.display = 'flex';
-                element.style.flexDirection = 'column';
-                element.style.alignItems = 'center';
+                element.style.display = 'block'; // FIX: Changed from flex to block to prevent empty PDF
+                element.style.textAlign = 'center';
                 element.style.overflowY = 'auto';
                 element.style.padding = '40px 0';
                 element.style.direction = 'rtl';
                 element.innerHTML = `
-                    <div style="background:white; border-radius:20px; padding:40px; box-shadow:0 10px 30px rgba(0,0,0,0.1); display:flex; flex-direction:column; align-items:center; max-width:90%;">
+                    <div style="background:white; border-radius:20px; padding:40px; box-shadow:0 10px 30px rgba(0,0,0,0.1); display:inline-block; max-width:90%; margin: 0 auto;">
                         <div class="loading" style="width:50px; height:50px; border-width:5px; margin-bottom:20px;"></div>
                         <div style="margin-bottom:20px; font-weight:bold; color:#1e3a8a; font-family:Cairo, sans-serif; font-size:16px; text-align:center;">جاري استخراج نسخة العقد (PDF)...<br><span style="font-size:12px; font-weight:normal; color:#718096;">يرجى الانتظار ثانية واحدة</span></div>
                         <div id="pdf-render-target" style="background:white; pointer-events:none; padding: 20px; border:1px solid #eee;">
@@ -892,12 +891,16 @@ async function generatePdfFromTemplate(template, studentData) {
         if (!text) return "";
         let processedText = String(text);
 
-        // Use ArabicReshaper if available
-        if (typeof ArabicReshaper !== 'undefined' && ArabicReshaper.convertArabic) {
+        // Robust check for ArabicReshaper
+        let reshaper = null;
+        if (typeof ArabicReshaper !== 'undefined') {
+            if (typeof ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper;
+            else if (ArabicReshaper.ArabicReshaper && typeof ArabicReshaper.ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper.ArabicReshaper;
+        }
+
+        if (reshaper) {
             // Reshape (connect letters)
-            processedText = ArabicReshaper.convertArabic(processedText);
-            // Reverse for RTL rendering in LTR context
-            return processedText.split('').reverse().join('');
+            processedText = reshaper.convertArabic(processedText);
         }
 
         return processedText.split('').reverse().join('');
