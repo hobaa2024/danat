@@ -204,6 +204,22 @@ class ContractManager {
                 }
             }
 
+            // STRATEGY C: Try Embedded Font (font-data.js) - Ultimate Backup
+            if (!this.cachedFont && typeof GLOBAL_CAIRO_FONT !== 'undefined') {
+                try {
+                    console.log("💎 Loading Font from Embedded Backup...");
+                    const binary = atob(GLOBAL_CAIRO_FONT);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    if (bytes.byteLength > 100000) { // Cairo usually > 100KB base64
+                        this.cachedFont = bytes.buffer;
+                        console.log("✅ Font loaded from Embedded Backup");
+                    } else {
+                        log.push("Embedded: Invalid size");
+                    }
+                } catch (e) { log.push(`Embedded: Error (${e.message})`); }
+            }
+
             if (!this.cachedFont) {
                 const errorDetails = log.join(' | ');
                 throw new Error(`تعذر تحميل خطوط العقد بسبب قيود في الشبكة أو ضعف الاتصال. (التشخيص: ${errorDetails})`);

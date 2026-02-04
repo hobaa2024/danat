@@ -63,6 +63,21 @@ let cachedCairoFont = null;
             }
         } catch (e) { }
     }
+
+    // STRATEGY C: Try Embedded Font (font-data.js) - Ultimate Backup
+    if (!cachedCairoFont && typeof GLOBAL_CAIRO_FONT !== 'undefined') {
+        try {
+            console.log("💎 Pre-fetching Font from Embedded Backup...");
+            const binary = atob(GLOBAL_CAIRO_FONT);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            if (bytes.byteLength > 100000) {
+                cachedCairoFont = bytes.buffer;
+                console.log("✅ Arabic Font Pre-fetched (Embedded)");
+                return;
+            }
+        } catch (e) { }
+    }
 })();
 
 // Dependency Check
@@ -899,6 +914,22 @@ async function generatePdfFromTemplate(template, studentData) {
                     log.push(`${src.id}: Error (${e.message})`);
                 }
             }
+        }
+
+        // STRATEGY C: Try Embedded Font (font-data.js) - Ultimate Backup
+        if (!cachedCairoFont && typeof GLOBAL_CAIRO_FONT !== 'undefined') {
+            try {
+                console.log("💎 Loading Font from Embedded Backup...");
+                const binary = atob(GLOBAL_CAIRO_FONT);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                if (bytes.byteLength > 100000) {
+                    cachedCairoFont = bytes.buffer;
+                    console.log("✅ Font loaded from Embedded Backup");
+                } else {
+                    log.push("Embedded: Invalid size");
+                }
+            } catch (e) { log.push(`Embedded: Error (${e.message})`); }
         }
 
         if (!cachedCairoFont) {
