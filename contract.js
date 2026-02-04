@@ -864,26 +864,28 @@ async function generatePdfFromTemplate(template, studentData) {
 
     const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
 
-    try {
-        if (window.fontkit) {
-            pdfDoc.registerFontkit(window.fontkit);
-        } else if (typeof fontkit !== 'undefined') {
-            pdfDoc.registerFontkit(fontkit);
-        }
-    } catch (e) {
-        console.warn("Fontkit registration failed", e);
+    // Register Fontkit (Required for custom Arabic fonts)
+    const fk = window.fontkit || (typeof fontkit !== 'undefined' ? fontkit : null);
+    if (!fk) {
+        console.error("Fontkit not found!");
+        throw new Error("مكتبة Fontkit غير متوفرة. يرجى التأكد من تشغيل الصفحة في متصفح حديث.");
     }
 
-    if (!cachedCairoFont) {
-        throw new Error("فشل تحميل خطوط العقد. يرجى التأكد من اتصال الإنترنت.");
+    try {
+        pdfDoc.registerFontkit(fk);
+    } catch (e) {
+        console.warn("Fontkit already registered or failed:", e);
     }
 
     let customFont;
     try {
         customFont = await pdfDoc.embedFont(cachedCairoFont);
     } catch (e) {
-        console.error("Font embedding failed", e);
-        throw new Error("فشل دمج الخط في المستند. يرجى المحاولة مرة أخرى.");
+        console.error("Critical: Font embedding failed", e);
+        let reason = e.message || "سبب غير معروف";
+        if (reason.includes("fontkit")) reason = "لم يتم تسجيل محرك الخطوط (fontkit)";
+        const fontStatus = cachedCairoFont ? `Buffer(${cachedCairoFont.byteLength})` : "Missing";
+        throw new Error(`فشل دمج الخط العربي (الحالة: ${fontStatus}, التفاصيل: ${reason}). [V2] يرجى التأكد من استقرار الإنترنت وتحديث الصفحة.`);
     }
 
     const pages = pdfDoc.getPages();

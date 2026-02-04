@@ -151,13 +151,13 @@ class ContractManager {
 
         const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
 
-        // FIX: Ensure fontkit is registered to prevent text overlapping
-        if (window.fontkit) {
-            pdfDoc.registerFontkit(window.fontkit);
-        } else if (typeof fontkit !== 'undefined') {
-            pdfDoc.registerFontkit(fontkit);
+        // Register Fontkit (Mandatory for custom TTF embedding in pdf-lib)
+        const fk = window.fontkit || (typeof fontkit !== 'undefined' ? fontkit : null);
+        if (fk) {
+            pdfDoc.registerFontkit(fk);
         } else {
-            console.warn("⚠️ Fontkit library missing! Arabic text will overlap.");
+            console.error("Critical: Fontkit library not found!");
+            throw new Error("مكتبة Fontkit غير متوفرة. يرجى التأكد من استقرار الإنترنت وتحديث الصفحة.");
         }
 
         // Load Arabic Font (Cairo) with caching
