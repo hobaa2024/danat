@@ -1571,11 +1571,12 @@ function injectDebugConsole() {
     // Check libraries
     setTimeout(() => {
         const missing = [];
+        const isReshaperLoaded = (typeof ArabicReshaper !== 'undefined' || window.ArabicReshaper);
         if (typeof mammoth === 'undefined') missing.push("Mammoth (Word)");
         if (typeof pdfjsLib === 'undefined') missing.push("PDF.js");
         if (typeof PDFLib === 'undefined') missing.push("PDF-Lib");
         if (typeof fontkit === 'undefined') missing.push("Fontkit");
-        if (typeof ArabicReshaper === 'undefined') missing.push("ArabicReshaper");
+        if (!isReshaperLoaded) missing.push("ArabicReshaper");
 
         if (missing.length > 0) {
             const warning = document.createElement('div');
