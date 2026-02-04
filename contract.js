@@ -887,21 +887,21 @@ async function generatePdfFromTemplate(template, studentData) {
     }
 
     const pages = pdfDoc.getPages();
-    // High-Precision Arabic Shaper
+    // High-Precision Arabic Reshaper Detection
     const fixArabic = (text) => {
         if (!text) return "";
         let processedText = String(text);
 
-        // Robust check for ArabicReshaper in all possible global locations
+        // Check all possible global names for the reshaper
         let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : null;
         if (reshaper && reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
+        if (!reshaper && window.ArabicReshaper) reshaper = window.ArabicReshaper;
 
         if (reshaper && typeof reshaper.convertArabic === 'function') {
             processedText = reshaper.convertArabic(processedText);
-        } else if (window.ArabicReshaper && typeof window.ArabicReshaper.convertArabic === 'function') {
-            processedText = window.ArabicReshaper.convertArabic(processedText);
+        } else {
+            console.warn("⚠️ ArabicReshaper library missing!");
         }
-
         // Reverse for RTL rendering in pdf-lib
         return processedText.split('').reverse().join('');
     };

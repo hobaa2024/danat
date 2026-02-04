@@ -184,41 +184,38 @@ class ContractManager {
             }
         }
 
-        let customFont;
+        let customFont = null;
         try {
-            if (this.cachedFont) {
+            if (this.cachedFont && this.cachedFont.byteLength > 10000) {
                 customFont = await pdfDoc.embedFont(this.cachedFont);
-            } else {
-                console.warn("⚠️ Arabic font failed to load. Falling back to Helvetica.");
-                alert("تنبيه: تعذر تحميل الخط العربي (Cairo). ستظهر النصوص العربية كرموز '؟'.\nيرجى التحقق من الاتصال بالإنترنت.");
-                customFont = await pdfDoc.embedStandardFont('Helvetica');
             }
         } catch (e) {
             console.error("Font embed error:", e);
-            customFont = await pdfDoc.embedStandardFont('Helvetica');
+        }
+
+        if (!customFont) {
+            alert("⚠️ تنبيه: خط العقد العربي (Cairo) لم يتحمل بعد.\nيرجى التأكد من اتصال الإنترنت ثم المحاولة مرة أخرى.");
+            throw new Error("Font not loaded");
         }
 
         const pages = pdfDoc.getPages();
 
-        // Simple Arabic Reshaper/Reverser for pdf-lib
+        // High-Precision Arabic Reshaper Detection
         const fixArabic = (text) => {
             if (!text) return "";
             let processedText = String(text);
 
-            // Robust check for ArabicReshaper
-            let reshaper = null;
-            if (typeof ArabicReshaper !== 'undefined') {
-                if (typeof ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper;
-                else if (ArabicReshaper.ArabicReshaper && typeof ArabicReshaper.ArabicReshaper.convertArabic === 'function') reshaper = ArabicReshaper.ArabicReshaper;
-            }
+            // Check all possible global names for the reshaper
+            let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : null;
+            if (reshaper && reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
+            if (!reshaper && window.ArabicReshaper) reshaper = window.ArabicReshaper;
 
-            if (reshaper) {
-                // Reshape (connect letters)
+            if (reshaper && typeof reshaper.convertArabic === 'function') {
                 processedText = reshaper.convertArabic(processedText);
             } else {
-                console.warn("⚠️ ArabicReshaper library missing! Text will be disconnected.");
+                console.warn("⚠️ ArabicReshaper library missing!");
             }
-            // Reverse for RTL rendering in LTR context
+            // Reverse for RTL rendering in pdf-lib
             return processedText.split('').reverse().join('');
         };
 
