@@ -851,10 +851,20 @@ async function renderPdfPage(num) {
 
 async function generatePdfFromTemplate(template, studentData) {
     const PDFLib_ref = window.PDFLib || (typeof PDFLib !== 'undefined' ? PDFLib : null);
+
+    // Ensure critical dependencies are loaded (Hyper-Resiliency)
     if (!PDFLib_ref) {
+        try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'); } catch (e) { }
+    }
+    if (typeof ArabicReshaper === 'undefined') {
+        try { await loadScript('https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js'); } catch (e) { }
+    }
+
+    const PDFLib_final = window.PDFLib || (typeof PDFLib !== 'undefined' ? PDFLib : null);
+    if (!PDFLib_final) {
         throw new Error("مكتبة PDF-Lib الحيوية غير متوفرة. يرجى تحديث الصفحة.");
     }
-    const { PDFDocument, rgb } = PDFLib_ref;
+    const { PDFDocument, rgb } = PDFLib_final;
 
     if (!template || !template.pdfData) {
         throw new Error("بيانات القالب غير متوفرة");
@@ -990,22 +1000,33 @@ async function generatePdfFromTemplate(template, studentData) {
 
     const pages = pdfDoc.getPages();
     // High-Precision Arabic Reshaper Detection
+    // Intelligent Arabic Handling
     const fixArabic = (text) => {
         if (!text) return "";
-        let processedText = String(text);
+        const str = String(text);
 
-        // Check all possible global names for the reshaper
-        let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : null;
+        // Check if text contains Arabic characters
+        const hasArabic = /[\u0600-\u06FF]/.test(str);
+        if (!hasArabic) return str; // return as-is for English/Numbers
+
+        // Find Reshaper
+        let reshaper = null;
+        if (typeof ArabicReshaper !== 'undefined') reshaper = ArabicReshaper;
+        else if (window.ArabicReshaper) reshaper = window.ArabicReshaper;
+
+        // Handle module exports
         if (reshaper && reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
-        if (!reshaper && window.ArabicReshaper) reshaper = window.ArabicReshaper;
+        if (reshaper && reshaper.default) reshaper = reshaper.default;
 
+        let processed = str;
         if (reshaper && typeof reshaper.convertArabic === 'function') {
-            processedText = reshaper.convertArabic(processedText);
+            processed = reshaper.convertArabic(processed);
         } else {
-            console.warn("⚠️ ArabicReshaper library missing!");
+            console.warn("⚠️ ArabicReshaper library missing or invalid structure");
         }
+
         // Reverse for RTL rendering in pdf-lib
-        return processedText.split('').reverse().join('');
+        return processed.split('').reverse().join('');
     };
 
     for (const field of template.pdfFields) {
