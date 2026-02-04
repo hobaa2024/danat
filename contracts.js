@@ -160,28 +160,40 @@ class ContractManager {
             throw new Error("مكتبة Fontkit غير متوفرة. يرجى التأكد من استقرار الإنترنت وتحديث الصفحة.");
         }
 
-        // Load Arabic Font (Cairo) with caching
+        // 1. Get Font (Cached) - Hyper-Resilient loading
         if (!this.cachedFont || this.cachedFont.byteLength < 500000) {
             this.cachedFont = null;
-            // FIX: Robust Font Loading (Try multiple sources)
-            const fontUrls = [
-                'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
-                'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf',
-                'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf'
+            const fontSources = [
+                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' },
+                { id: 'CDN2', url: 'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf' },
+                { id: 'GitHub', url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf' },
+                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf' }
             ];
 
-            for (const url of fontUrls) {
+            let log = [];
+            for (const src of fontSources) {
                 try {
-                    const resp = await fetch(url);
+                    const resp = await fetch(src.url, { mode: 'cors' });
                     if (resp.ok) {
                         const buf = await resp.arrayBuffer();
                         if (buf.byteLength > 500000) {
                             this.cachedFont = buf;
-                            console.log("✅ Arabic Font Loaded (TTF) from:", url);
+                            console.log(`✅ Font loaded from ${src.id}`);
                             break;
+                        } else {
+                            log.push(`${src.id}: Size missing (${buf.byteLength})`);
                         }
+                    } else {
+                        log.push(`${src.id}: HTTP ${resp.status}`);
                     }
-                } catch (e) { console.warn("Font fetch failed", url); }
+                } catch (e) {
+                    log.push(`${src.id}: Error (${e.message})`);
+                }
+            }
+
+            if (!this.cachedFont) {
+                const errorDetails = log.join(' | ');
+                throw new Error(`تعذر تحميل خطوط العقد بسبب قيود في الشبكة أو ضعف الاتصال. (التشخيص: ${errorDetails})`);
             }
         }
 

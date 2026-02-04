@@ -22,18 +22,27 @@ let lastY = 0;
 let cachedCairoFont = null;
 
 // Pre-fetch font immediately
-// Pre-fetch font immediately with validation
+// Pre-fetch font immediately with hyper-resilience
 (async function prefetchFont() {
-    try {
-        const res = await fetch('https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf');
-        if (res.ok) {
-            const buf = await res.arrayBuffer();
-            if (buf.byteLength > 500000) { // Cairo-Regular is ~1.5MB
-                cachedCairoFont = buf;
-                console.log("✅ Arabic Font Pre-fetched (TTF)");
+    if (cachedCairoFont) return;
+    const sources = [
+        'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
+        'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf',
+        'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf'
+    ];
+    for (const url of sources) {
+        try {
+            const res = await fetch(url);
+            if (res.ok) {
+                const buf = await res.arrayBuffer();
+                if (buf.byteLength > 500000) {
+                    cachedCairoFont = buf;
+                    console.log("✅ Arabic Font Pre-fetched");
+                    break;
+                }
             }
-        }
-    } catch (e) { console.warn("Font prefetch failed"); }
+        } catch (e) { }
+    }
 })();
 
 // Dependency Check
@@ -816,35 +825,41 @@ async function generatePdfFromTemplate(template, studentData) {
         throw new Error("بيانات القالب غير متوفرة");
     }
 
-    // 1. Get Font (Cached) - Bulletproof loading
-    // Re-check validity if it was corrupted by a failed prefetch
+    // 1. Get Font (Cached) - Hyper-Resilient loading
     if (!cachedCairoFont || cachedCairoFont.byteLength < 500000) {
         cachedCairoFont = null;
-        const fontUrls = [
-            'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
-            'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf',
-            'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf'
+        const fontSources = [
+            { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' },
+            { id: 'CDN2', url: 'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf' },
+            { id: 'GitHub', url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf' },
+            { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf' }
         ];
 
-        for (const url of fontUrls) {
+        let log = [];
+        for (const src of fontSources) {
             try {
-                const resp = await fetch(url);
+                const resp = await fetch(src.url, { mode: 'cors' });
                 if (resp.ok) {
                     const buf = await resp.arrayBuffer();
                     if (buf.byteLength > 500000) {
                         cachedCairoFont = buf;
-                        console.log("✅ Arabic Font Loaded (TTF) from:", url);
+                        console.log(`✅ Font loaded from ${src.id}`);
                         break;
+                    } else {
+                        log.push(`${src.id}: Size missing (${buf.byteLength})`);
                     }
+                } else {
+                    log.push(`${src.id}: HTTP ${resp.status}`);
                 }
             } catch (e) {
-                console.warn(`Font load attempt failed for ${url}`);
+                log.push(`${src.id}: Error (${e.message})`);
             }
         }
-    }
 
-    if (!cachedCairoFont) {
-        throw new Error("تعذر تحميل خطوط العقد. يرجى التحقق من جودة الاتصال.");
+        if (!cachedCairoFont) {
+            const errorDetails = log.join(' | ');
+            throw new Error(`تعذر تحميل خطوط العقد بسبب قيود في الشبكة أو ضعف الاتصال. (التشخيص: ${errorDetails})`);
+        }
     }
 
     // 2. Load the template
