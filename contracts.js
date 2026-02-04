@@ -164,10 +164,10 @@ class ContractManager {
         if (!this.cachedFont || this.cachedFont.byteLength < 500000) {
             this.cachedFont = null;
             const fontSources = [
-                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' },
-                { id: 'CDN2', url: 'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf' },
-                { id: 'GitHub', url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf' }
+                { id: 'Local', url: 'Cairo-Regular.ttf' },
+                { id: 'GitHub', url: 'https://github.com/googlefonts/cairo/raw/master/fonts/ttf/Cairo-Regular.ttf' },
+                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v28/SLXGc1nY6HkvangtZmpcMw.ttf' },
+                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' }
             ];
 
             let log = [];

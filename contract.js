@@ -24,11 +24,31 @@ let cachedCairoFont = null;
 // Pre-fetch font immediately
 // Pre-fetch font immediately with hyper-resilience
 (async function prefetchFont() {
-    if (cachedCairoFont) return;
+    if (cachedCairoFont && cachedCairoFont.byteLength > 500000) return;
+
+    // STRATEGY A: Try CloudDB (Firebase) first - Most reliable for parents
+    if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+        try {
+            const cloudBase64 = await CloudDB.getFont('Cairo-Regular');
+            if (cloudBase64) {
+                const binary = atob(cloudBase64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                if (bytes.byteLength > 500000) {
+                    cachedCairoFont = bytes.buffer;
+                    console.log("✅ Arabic Font Pre-fetched (Cloud)");
+                    return;
+                }
+            }
+        } catch (e) { }
+    }
+
+    // STRATEGY B: Try Local and External sources
     const sources = [
-        'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
-        'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf',
-        'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf'
+        'Cairo-Regular.ttf',
+        'https://github.com/googlefonts/cairo/raw/master/fonts/ttf/Cairo-Regular.ttf',
+        'https://fonts.gstatic.com/s/cairo/v28/SLXGc1nY6HkvangtZmpcMw.ttf',
+        'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf'
     ];
     for (const url of sources) {
         try {
@@ -37,7 +57,7 @@ let cachedCairoFont = null;
                 const buf = await res.arrayBuffer();
                 if (buf.byteLength > 500000) {
                     cachedCairoFont = buf;
-                    console.log("✅ Arabic Font Pre-fetched");
+                    console.log("✅ Arabic Font Pre-fetched (" + url + ")");
                     break;
                 }
             }
@@ -854,10 +874,10 @@ async function generatePdfFromTemplate(template, studentData) {
         // STRATEGY B: Fallback to External CDNs if cloud failed
         if (!cachedCairoFont) {
             const fontSources = [
-                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' },
-                { id: 'CDN2', url: 'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf' },
-                { id: 'GitHub', url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf' }
+                { id: 'Local', url: 'Cairo-Regular.ttf' },
+                { id: 'GitHub', url: 'https://github.com/googlefonts/cairo/raw/master/fonts/ttf/Cairo-Regular.ttf' },
+                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v28/SLXGc1nY6HkvangtZmpcMw.ttf' },
+                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' }
             ];
 
             for (const src of fontSources) {
