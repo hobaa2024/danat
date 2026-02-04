@@ -825,34 +825,59 @@ async function generatePdfFromTemplate(template, studentData) {
         throw new Error("بيانات القالب غير متوفرة");
     }
 
-    // 1. Get Font (Cached) - Hyper-Resilient loading
+    // 1. Get Font (Cached) - Hyper-Resilient logic
     if (!cachedCairoFont || cachedCairoFont.byteLength < 500000) {
         cachedCairoFont = null;
-        const fontSources = [
-            { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' },
-            { id: 'CDN2', url: 'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf' },
-            { id: 'GitHub', url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf' },
-            { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf' }
-        ];
-
         let log = [];
-        for (const src of fontSources) {
+
+        // STRATEGY A: Try CloudDB (Firebase) first - Most reliable for parents
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             try {
-                const resp = await fetch(src.url, { mode: 'cors' });
-                if (resp.ok) {
-                    const buf = await resp.arrayBuffer();
-                    if (buf.byteLength > 500000) {
-                        cachedCairoFont = buf;
-                        console.log(`✅ Font loaded from ${src.id}`);
-                        break;
+                console.log("☁️ Attempting to load font from CloudDB...");
+                const cloudBase64 = await CloudDB.getFont('Cairo-Regular');
+                if (cloudBase64) {
+                    const binary = atob(cloudBase64);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    if (bytes.byteLength > 500000) {
+                        cachedCairoFont = bytes.buffer;
+                        console.log("✅ Font loaded from CloudDB");
                     } else {
-                        log.push(`${src.id}: Size missing (${buf.byteLength})`);
+                        log.push("Cloud: Invalid size");
                     }
                 } else {
-                    log.push(`${src.id}: HTTP ${resp.status}`);
+                    log.push("Cloud: Not found");
                 }
-            } catch (e) {
-                log.push(`${src.id}: Error (${e.message})`);
+            } catch (e) { log.push(`Cloud: Error (${e.message})`); }
+        }
+
+        // STRATEGY B: Fallback to External CDNs if cloud failed
+        if (!cachedCairoFont) {
+            const fontSources = [
+                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' },
+                { id: 'CDN2', url: 'https://cdn.jsdelivr.net/npm/mw-fonts@0.0.2/cairo-v10-latin_arabic-regular.ttf' },
+                { id: 'GitHub', url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf' },
+                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v20/SLXGc1nY6HkvangtZmpcMw.ttf' }
+            ];
+
+            for (const src of fontSources) {
+                try {
+                    const resp = await fetch(src.url, { mode: 'cors' });
+                    if (resp.ok) {
+                        const buf = await resp.arrayBuffer();
+                        if (buf.byteLength > 500000) {
+                            cachedCairoFont = buf;
+                            console.log(`✅ Font loaded from ${src.id}`);
+                            break;
+                        } else {
+                            log.push(`${src.id}: Size missing (${buf.byteLength})`);
+                        }
+                    } else {
+                        log.push(`${src.id}: HTTP ${resp.status}`);
+                    }
+                } catch (e) {
+                    log.push(`${src.id}: Error (${e.message})`);
+                }
             }
         }
 

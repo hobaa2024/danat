@@ -256,6 +256,29 @@ const CloudDB = {
                 console.error('Cloud fetch templates error:', err);
                 return [];
             });
+    },
+    // --- FONT STORAGE SYNC ---
+    saveFont(id, fontData) {
+        if (!firebaseDb) return Promise.resolve(false);
+        return firebaseDb.ref('fonts/' + id).set(fontData)
+            .then(() => {
+                console.log('☁️ Font saved to cloud:', id);
+                return true;
+            })
+            .catch(err => {
+                console.error('Font cloud save error:', err);
+                return false;
+            });
+    },
+
+    getFont(id) {
+        if (!firebaseDb) return Promise.resolve(null);
+        return firebaseDb.ref('fonts/' + id).once('value')
+            .then(snapshot => snapshot.val())
+            .catch(err => {
+                console.error('Cloud fetch font error:', err);
+                return null;
+            });
     }
 };
 

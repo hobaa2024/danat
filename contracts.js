@@ -179,6 +179,19 @@ class ContractManager {
                         if (buf.byteLength > 500000) {
                             this.cachedFont = buf;
                             console.log(`✅ Font loaded from ${src.id}`);
+
+                            // AUTO-SYNC TO CLOUD: Save verified font to Firebase for parents
+                            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                                try {
+                                    const bytes = new Uint8Array(buf);
+                                    let binary = '';
+                                    for (let i = 0; i < bytes.byteLength; i++) {
+                                        binary += String.fromCharCode(bytes[i]);
+                                    }
+                                    const base64Font = btoa(binary);
+                                    CloudDB.saveFont('Cairo-Regular', base64Font);
+                                } catch (e) { console.warn("Font sync failed", e); }
+                            }
                             break;
                         } else {
                             log.push(`${src.id}: Size missing (${buf.byteLength})`);
