@@ -22,10 +22,17 @@ let lastY = 0;
 let cachedCairoFont = null;
 
 // Pre-fetch font immediately
+// Pre-fetch font immediately with validation
 (async function prefetchFont() {
     try {
-        cachedCairoFont = await fetch('https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf').then(res => res.arrayBuffer());
-        console.log("✅ Arabic Font Pre-fetched (TTF)");
+        const res = await fetch('https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf');
+        if (res.ok) {
+            const buf = await res.arrayBuffer();
+            if (buf.byteLength > 500000) { // Cairo-Regular is ~1.5MB
+                cachedCairoFont = buf;
+                console.log("✅ Arabic Font Pre-fetched (TTF)");
+            }
+        }
     } catch (e) { console.warn("Font prefetch failed"); }
 })();
 
@@ -810,7 +817,9 @@ async function generatePdfFromTemplate(template, studentData) {
     }
 
     // 1. Get Font (Cached) - Bulletproof loading
-    if (!cachedCairoFont) {
+    // Re-check validity if it was corrupted by a failed prefetch
+    if (!cachedCairoFont || cachedCairoFont.byteLength < 500000) {
+        cachedCairoFont = null;
         const fontUrls = [
             'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
             'https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo-Regular.ttf',
@@ -822,7 +831,7 @@ async function generatePdfFromTemplate(template, studentData) {
                 const resp = await fetch(url);
                 if (resp.ok) {
                     const buf = await resp.arrayBuffer();
-                    if (buf.byteLength > 10000) {
+                    if (buf.byteLength > 500000) {
                         cachedCairoFont = buf;
                         console.log("✅ Arabic Font Loaded (TTF) from:", url);
                         break;

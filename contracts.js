@@ -161,7 +161,8 @@ class ContractManager {
         }
 
         // Load Arabic Font (Cairo) with caching
-        if (!this.cachedFont) {
+        if (!this.cachedFont || this.cachedFont.byteLength < 500000) {
+            this.cachedFont = null;
             // FIX: Robust Font Loading (Try multiple sources)
             const fontUrls = [
                 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf',
@@ -174,9 +175,9 @@ class ContractManager {
                     const resp = await fetch(url);
                     if (resp.ok) {
                         const buf = await resp.arrayBuffer();
-                        if (buf.byteLength > 10000) {
+                        if (buf.byteLength > 500000) {
                             this.cachedFont = buf;
-                            console.log("✅ Font loaded from:", url);
+                            console.log("✅ Arabic Font Loaded (TTF) from:", url);
                             break;
                         }
                     }
@@ -186,7 +187,7 @@ class ContractManager {
 
         let customFont = null;
         try {
-            if (this.cachedFont && this.cachedFont.byteLength > 10000) {
+            if (this.cachedFont && this.cachedFont.byteLength > 500000) {
                 customFont = await pdfDoc.embedFont(this.cachedFont);
             }
         } catch (e) {
@@ -1568,23 +1569,32 @@ function injectDebugConsole() {
     // Let's just log to standard console primarily, but add a visible alert for "Init Success" to confirm to user.
     // console.log("System Initialized");
 
-    // Check libraries
+    // Check libraries (give enough time for fallbacks to load)
     setTimeout(() => {
         const missing = [];
-        const isReshaperLoaded = (typeof ArabicReshaper !== 'undefined' || window.ArabicReshaper);
+        const isReshaperLoaded = (typeof ArabicReshaper !== 'undefined' || window.ArabicReshaper || ArabicReshaper?.ArabicReshaper);
+        const isPdfLibLoaded = (typeof PDFLib !== 'undefined' || window.PDFLib);
+        const isFontkitLoaded = (typeof fontkit !== 'undefined' || window.fontkit);
+
         if (typeof mammoth === 'undefined') missing.push("Mammoth (Word)");
         if (typeof pdfjsLib === 'undefined') missing.push("PDF.js");
-        if (typeof PDFLib === 'undefined') missing.push("PDF-Lib");
-        if (typeof fontkit === 'undefined') missing.push("Fontkit");
+        if (!isPdfLibLoaded) missing.push("PDF-Lib");
+        if (!isFontkitLoaded) missing.push("Fontkit");
         if (!isReshaperLoaded) missing.push("ArabicReshaper");
 
         if (missing.length > 0) {
+            const warningId = 'lib_loading_warning';
+            if (document.getElementById(warningId)) return;
+
             const warning = document.createElement('div');
-            warning.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); background:red; color:white; padding:10px 20px; z-index:100000; border-radius:5px; font-weight:bold;';
-            warning.innerHTML = `⚠️ تنبيه: بعض المكتبات لم تتحمل: ${missing.join(', ')} <br> يرجى التحقق من الاتصال بالإنترنت وتحديث الصفحة.`;
+            warning.id = warningId;
+            warning.style.cssText = 'position:fixed; top:20px; left:50%; transform:translateX(-50%); background:#fee2e2; color:#991b1b; padding:15px 25px; z-index:100000; border-radius:12px; font-weight:bold; box-shadow:0 10px 15px -3px rgba(0,0,0,0.1); border:2px solid #ef4444; direction:rtl; text-align:center; min-width:300px;';
+            warning.innerHTML = `
+                <div style="font-size:1rem; margin-bottom:5px;">⚠️ مشكلة في تحميل مكتبات النظام</div>
+                <div style="font-size:0.85rem; font-weight:normal;">المكتبات المتأثرة: <b>${missing.join(', ')}</b></div>
+                <button onclick="location.reload()" style="margin-top:10px; padding:5px 12px; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer;">تحديث الصفحة</button>
+            `;
             document.body.appendChild(warning);
-        } else {
-            console.log("All libraries loaded.");
         }
-    }, 2000);
+    }, 4000); // Increased wait time for slow connections
 }
