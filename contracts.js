@@ -59,14 +59,50 @@ class ContractManager {
 
     replaceVariables(content, studentData) {
         let result = content;
+
+        // Text Variables
         result = result.replace(/{اسم_الطالب}/g, studentData.studentName || '');
         result = result.replace(/{اسم_ولي_الامر}/g, studentData.parentName || '');
         result = result.replace(/{المسار}/g, studentData.customFields?.studentTrack || studentData.studentTrack || '');
         result = result.replace(/{الصف}/g, studentData.studentGrade || '');
         result = result.replace(/{السنة_الدراسية}/g, studentData.contractYear || '');
         result = result.replace(/{البريد_الالكتروني}/g, studentData.parentEmail || '');
+        result = result.replace(/{الرقم_القومي}/g, studentData.nationalId || '');
         result = result.replace(/{رقم_الواتساب}/g, studentData.parentWhatsapp || '');
         result = result.replace(/{التاريخ}/g, new Date().toLocaleDateString('ar-SA'));
+
+        // Image Variables (HTML Rendering)
+        // Signature
+        if (result.includes('{التوقيع}')) {
+            const sigImg = studentData.signature
+                ? `<img src="${studentData.signature}" style="max-height:80px; max-width:200px; display:block; margin:10px 0;">`
+                : '<span style="color:#e53e3e;">(لم يوقع بعد)</span>';
+            result = result.replace(/{التوقيع}/g, sigImg);
+        }
+
+        // Stamp
+        if (result.includes('{الختم}')) {
+            try {
+                let stampSrc = null;
+                if (typeof db !== 'undefined' && db.getSettings) stampSrc = db.getSettings().stampImage;
+                else stampSrc = JSON.parse(localStorage.getItem('appSettings') || '{}').stampImage;
+
+                const stampImg = stampSrc
+                    ? `<img src="${stampSrc}" style="max-height:80px; max-width:120px; display:block; margin:10px 0;">`
+                    : '';
+                result = result.replace(/{الختم}/g, stampImg);
+            } catch (e) { }
+        }
+
+        // ID Image
+        if (result.includes('{الهوية}')) {
+            const idSrc = studentData.idImage || studentData.idCardImage;
+            const idImg = idSrc
+                ? `<img src="${idSrc}" style="max-height:150px; max-width:300px; display:block; margin:10px 0; border:1px solid #ccc;">`
+                : '<span style="color:#718096;">(صورة الهوية غير متوفرة)</span>';
+            result = result.replace(/{الهوية}/g, idImg);
+        }
+
         return result;
     }
 
@@ -245,46 +281,25 @@ class ContractManager {
 
         let customFont = null;
         try {
-            if (this.cachedFont && this.cachedFont.byteLength > 100000) {
+            if (this.cachedFont && this.cachedFont.byteLength > 50000) {
                 customFont = await pdfDoc.embedFont(this.cachedFont);
+                console.log("✅ Custom Arabic font embedded successfully");
+            } else {
+                throw new Error("Font not cached");
             }
         } catch (e) {
-            console.error("Font embed error:", e);
-        }
-
-        if (!customFont) {
-            alert("⚠️ تنبيه: خط العقد العربي (Amiri) لم يتحمل بعد.\nيرجى التأكد من اتصال الإنترنت ثم المحاولة مرة أخرى.");
-            throw new Error("Font not loaded");
+            console.warn("Arabic font embedding failed, using fallback Helvetica:", e.message);
+            // Fallback to Helvetica (built-in, always works)
+            const { StandardFonts } = PDFLib;
+            customFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
         }
 
         const pages = pdfDoc.getPages();
 
-        // High-Precision Arabic Reshaper Detection
+        // Simple Arabic text handler - NO REVERSAL (font handles RTL)
         const fixArabic = (text) => {
             if (!text) return "";
-            let processedText = String(text);
-
-            // Check if text contains Arabic characters (Extended)
-            const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(processedText);
-            if (!hasArabic) return processedText;
-
-            // Check all possible global names for the reshaper
-            let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : (window.ArabicReshaper || null);
-
-            let convertFunc = null;
-            if (reshaper) {
-                if (typeof reshaper.convertArabic === 'function') convertFunc = reshaper.convertArabic;
-                else if (reshaper.ArabicReshaper && typeof reshaper.ArabicReshaper.convertArabic === 'function') convertFunc = reshaper.ArabicReshaper.convertArabic;
-                else if (reshaper.default && typeof reshaper.default.convertArabic === 'function') convertFunc = reshaper.default.convertArabic;
-            }
-
-            if (convertFunc) {
-                processedText = convertFunc(processedText);
-            } else {
-                console.warn("⚠️ ArabicReshaper library missing!");
-            }
-            // Reverse for RTL rendering in pdf-lib
-            return processedText.split('').reverse().join('');
+            return String(text);
         };
 
         // Process Fields
@@ -303,13 +318,27 @@ class ContractManager {
             else if (text === '{الرقم_القومي}') text = studentData.nationalId || '';
             else if (text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
             else if (text === '{التاريخ}') text = new Date().toLocaleDateString('ar-SA');
-            else if (text === '{التوقيع}') { text = studentData.signature; isImage = true; }
-            else if (text === '{الهوية}') { text = studentData.idImage || studentData.idCardImage || null; isImage = true; }
+            else if (text === '{التوقيع}') {
+                text = studentData.signature;
+                isImage = true;
+                if (!text) console.warn("⚠️ Signature data missing for student:", studentData.studentName);
+            }
+            else if (text === '{الهوية}') {
+                text = studentData.idImage || studentData.idCardImage || null;
+                isImage = true;
+                if (!text) console.warn("⚠️ ID Image missing for student:", studentData.studentName);
+            }
             else if (text === '{الختم}') {
-                // If previewing in admin, show stamp if student is signed or if specialized for preview
-                const settings = (typeof db !== 'undefined') ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
+                // Try to get settings from DB or LocalStorage
+                let settings = {};
+                try {
+                    if (typeof db !== 'undefined' && db.getSettings) settings = db.getSettings();
+                    else settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                } catch (e) { console.error("Error reading settings for stamp", e); }
+
                 text = settings.stampImage || null;
                 isImage = true;
+                if (!text) console.warn("⚠️ Stamp image missing in settings");
             } else {
                 // Check Custom Fields
                 if (studentData.customFields) {
@@ -342,10 +371,28 @@ class ContractManager {
             if (isImage) {
                 try {
                     let image;
-                    if (text.startsWith('data:image/png')) {
-                        image = await pdfDoc.embedPng(text);
-                    } else if (text.startsWith('data:image/jpeg') || text.startsWith('data:image/jpg')) {
-                        image = await pdfDoc.embedJpg(text);
+                    // Robust Image Embedding Support
+                    let base64Data = text;
+                    let isPng = true; // Default assumption if unknown
+
+                    if (text.includes(',')) {
+                        const parts = text.split(',');
+                        if (parts[0].includes('jpeg') || parts[0].includes('jpg')) isPng = false;
+                        base64Data = parts[1];
+                    }
+
+                    // Try detecting format from magic numbers if possible, or just try-catch
+                    try {
+                        if (isPng) image = await pdfDoc.embedPng(base64Data);
+                        else image = await pdfDoc.embedJpg(base64Data);
+                    } catch (e1) {
+                        // Fallback: swap format
+                        try {
+                            if (isPng) image = await pdfDoc.embedJpg(base64Data);
+                            else image = await pdfDoc.embedPng(base64Data);
+                        } catch (e2) {
+                            console.error("Failed to embed image in either format", e2);
+                        }
                     }
 
                     if (image) {
@@ -356,9 +403,10 @@ class ContractManager {
                             width: imgDims.width,
                             height: imgDims.height,
                         });
+                        console.log(`✅ Image embedded at ${pdfX},${pdfY}`);
                     }
                 } catch (err) {
-                    console.error("Error embedding image:", err);
+                    console.error("Error processing/embedding image:", err);
                 }
             } else {
                 // Draw Text with fixed Arabic

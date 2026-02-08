@@ -991,44 +991,25 @@ async function generatePdfFromTemplate(template, studentData) {
 
     let customFont;
     try {
-        customFont = await pdfDoc.embedFont(cachedCairoFont);
+        if (cachedCairoFont && cachedCairoFont.byteLength > 50000) {
+            customFont = await pdfDoc.embedFont(cachedCairoFont);
+            console.log("✅ Custom Arabic font embedded successfully");
+        } else {
+            throw new Error("Font not cached");
+        }
     } catch (e) {
-        console.error("Critical: Font embedding failed", e);
-        let reason = e.message || "سبب غير معروف";
-        if (reason.includes("fontkit")) reason = "لم يتم تسجيل محرك الخطوط (fontkit)";
-        const fontStatus = cachedCairoFont ? `Buffer(${cachedCairoFont.byteLength})` : "Missing";
-        throw new Error(`فشل دمج الخط العربي (الحالة: ${fontStatus}, التفاصيل: ${reason}). [V2] يرجى التأكد من استقرار الإنترنت وتحديث الصفحة.`);
+        console.warn("Arabic font embedding failed, using fallback Helvetica:", e.message);
+        // Fallback to Helvetica (built-in, always works)
+        const { StandardFonts } = PDFLib;
+        customFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     }
 
     const pages = pdfDoc.getPages();
-    // High-Precision Arabic Reshaper Detection
-    // Intelligent Arabic Handling
+
+    // Simple Arabic text handler - NO REVERSAL (font handles RTL)
     const fixArabic = (text) => {
         if (!text) return "";
-        const str = String(text);
-
-        // Check if text contains Arabic characters (Extended)
-        const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
-        if (!hasArabic) return str; // return as-is for English/Numbers
-
-        // Find Reshaper
-        let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : (window.ArabicReshaper || null);
-
-        // Robustly find the convert function
-        let convertFunc = null;
-        if (reshaper) {
-            if (typeof reshaper.convertArabic === 'function') convertFunc = reshaper.convertArabic;
-            else if (reshaper.ArabicReshaper && typeof reshaper.ArabicReshaper.convertArabic === 'function') convertFunc = reshaper.ArabicReshaper.convertArabic;
-            else if (reshaper.default && typeof reshaper.default.convertArabic === 'function') convertFunc = reshaper.default.convertArabic;
-        }
-
-        let processed = str;
-        if (convertFunc) {
-            processed = convertFunc(processed);
-        }
-
-        // Reverse for RTL rendering in pdf-lib
-        return processed.split('').reverse().join('');
+        return String(text);
     };
 
     for (const field of template.pdfFields) {
@@ -1079,18 +1060,35 @@ async function generatePdfFromTemplate(template, studentData) {
         if (isImage) {
             try {
                 let img;
-                if (text.startsWith('data:image/png')) {
-                    img = await pdfDoc.embedPng(text);
-                } else if (text.startsWith('data:image/jpeg') || text.startsWith('data:image/jpg')) {
-                    img = await pdfDoc.embedJpg(text);
-                } else {
-                    // Fallback attempt
-                    try { img = await pdfDoc.embedPng(text); } catch (e) { img = await pdfDoc.embedJpg(text); }
+                // Robust Image Embedding Support
+                let base64Data = text;
+                let isPng = true; // Default assumption
+
+                if (text.includes(',')) {
+                    const parts = text.split(',');
+                    // Try to guess from MIME
+                    if (parts[0].includes('jpeg') || parts[0].includes('jpg')) isPng = false;
+                    base64Data = parts[1];
+                }
+
+                // Try detecting format or just try-catch
+                try {
+                    if (isPng) img = await pdfDoc.embedPng(base64Data);
+                    else img = await pdfDoc.embedJpg(base64Data);
+                } catch (e1) {
+                    // Fallback: swap format
+                    try {
+                        if (isPng) img = await pdfDoc.embedJpg(base64Data);
+                        else img = await pdfDoc.embedPng(base64Data);
+                    } catch (e2) {
+                        console.error("Failed to embed image in either format", e2);
+                    }
                 }
 
                 if (img) {
                     const dims = img.scaleToFit(120, 60);
                     page.drawImage(img, { x: pdfX, y: pdfY - dims.height, width: dims.width, height: dims.height });
+                    console.log(`✅ Image field embedded: ${field.variable}`);
                 }
             } catch (e) {
                 console.warn("Failed to embed image field:", field.variable, e);
