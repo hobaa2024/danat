@@ -968,9 +968,18 @@
     <script src="font-data.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"></script>
     <script>
-        if (typeof ArabicReshaper === 'undefined') {
-            document.write('<script src="https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"><\/script>');
-        }
+        // Wait a moment for the library to initialize, then check
+        setTimeout(() => {
+            if (typeof ArabicReshaper === 'undefined' && typeof window.ArabicReshaper === 'undefined') {
+                console.warn("Primary ArabicReshaper failed to load, trying fallback...");
+                const fallback = document.createElement('script');
+                fallback.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                fallback.onerror = () => console.error("Both ArabicReshaper sources failed. Arabic text in PDF may not display correctly.");
+                document.head.appendChild(fallback);
+            } else {
+                console.log("✅ ArabicReshaper loaded successfully");
+            }
+        }, 500);
     </script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>

@@ -1005,18 +1005,18 @@ async function generatePdfFromTemplate(template, studentData) {
         if (!text) return "";
         const str = String(text);
 
-        // Check if text contains Arabic characters
-        const hasArabic = /[\u0600-\u06FF]/.test(str);
+        // Check if text contains Arabic characters (Extended)
+        const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
         if (!hasArabic) return str; // return as-is for English/Numbers
 
         // Find Reshaper
-        let reshaper = null;
-        if (typeof ArabicReshaper !== 'undefined') reshaper = ArabicReshaper;
-        else if (window.ArabicReshaper) reshaper = window.ArabicReshaper;
+        let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : (window.ArabicReshaper || null);
 
         // Handle module exports
-        if (reshaper && reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
-        if (reshaper && reshaper.default) reshaper = reshaper.default;
+        if (reshaper && !reshaper.convertArabic) {
+            if (reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
+            else if (reshaper.default) reshaper = reshaper.default;
+        }
 
         let processed = str;
         if (reshaper && typeof reshaper.convertArabic === 'function') {

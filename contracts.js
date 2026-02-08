@@ -137,6 +137,19 @@ class ContractManager {
             throw new Error("بيانات قالب PDF غير صالحة");
         }
 
+        // Ensure ArabicReshaper is loaded
+        if (typeof ArabicReshaper === 'undefined') {
+            try {
+                await new Promise((resolve) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                    s.onload = resolve;
+                    s.onerror = resolve;
+                    document.head.appendChild(s);
+                });
+            } catch (e) { console.warn("Failed to load ArabicReshaper", e); }
+        }
+
         const { PDFDocument, rgb } = PDFLib;
         const fontkit = window.fontkit;
 
@@ -247,10 +260,17 @@ class ContractManager {
             if (!text) return "";
             let processedText = String(text);
 
+            // Check if text contains Arabic characters (Extended)
+            const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(processedText);
+            if (!hasArabic) return processedText;
+
             // Check all possible global names for the reshaper
-            let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : null;
-            if (reshaper && reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
-            if (!reshaper && window.ArabicReshaper) reshaper = window.ArabicReshaper;
+            let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : (window.ArabicReshaper || null);
+
+            if (reshaper && !reshaper.convertArabic) {
+                if (reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
+                else if (reshaper.default) reshaper = reshaper.default;
+            }
 
             if (reshaper && typeof reshaper.convertArabic === 'function') {
                 processedText = reshaper.convertArabic(processedText);
