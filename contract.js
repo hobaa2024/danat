@@ -857,7 +857,9 @@ async function generatePdfFromTemplate(template, studentData) {
         try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'); } catch (e) { }
     }
     if (typeof ArabicReshaper === 'undefined') {
-        try { await loadScript('https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js'); } catch (e) { }
+        try { await loadScript('https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js'); } catch (e) {
+            try { await loadScript('https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.js'); } catch (e2) { }
+        }
     }
 
     const PDFLib_final = window.PDFLib || (typeof PDFLib !== 'undefined' ? PDFLib : null);
@@ -1012,17 +1014,17 @@ async function generatePdfFromTemplate(template, studentData) {
         // Find Reshaper
         let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : (window.ArabicReshaper || null);
 
-        // Handle module exports
-        if (reshaper && !reshaper.convertArabic) {
-            if (reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
-            else if (reshaper.default) reshaper = reshaper.default;
+        // Robustly find the convert function
+        let convertFunc = null;
+        if (reshaper) {
+            if (typeof reshaper.convertArabic === 'function') convertFunc = reshaper.convertArabic;
+            else if (reshaper.ArabicReshaper && typeof reshaper.ArabicReshaper.convertArabic === 'function') convertFunc = reshaper.ArabicReshaper.convertArabic;
+            else if (reshaper.default && typeof reshaper.default.convertArabic === 'function') convertFunc = reshaper.default.convertArabic;
         }
 
         let processed = str;
-        if (reshaper && typeof reshaper.convertArabic === 'function') {
-            processed = reshaper.convertArabic(processed);
-        } else {
-            console.warn("⚠️ ArabicReshaper library missing or invalid structure");
+        if (convertFunc) {
+            processed = convertFunc(processed);
         }
 
         // Reverse for RTL rendering in pdf-lib

@@ -147,7 +147,11 @@ class ContractManager {
                     s.onerror = resolve;
                     document.head.appendChild(s);
                 });
-            } catch (e) { console.warn("Failed to load ArabicReshaper", e); }
+            } catch (e) {
+                try {
+                    await new Promise((resolve) => { const s = document.createElement('script'); s.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.js'; s.onload = resolve; s.onerror = resolve; document.head.appendChild(s); });
+                } catch (e2) { }
+            }
         }
 
         const { PDFDocument, rgb } = PDFLib;
@@ -173,14 +177,14 @@ class ContractManager {
             throw new Error("مكتبة Fontkit غير متوفرة. يرجى التأكد من استقرار الإنترنت وتحديث الصفحة.");
         }
 
-        // 1. Get Font (Cached) - Hyper-Resilient loading
-        if (!this.cachedFont || this.cachedFont.byteLength < 500000) {
+        // 1. Get Font (Cached) - Hyper-Resilient loading (using Amiri font - more reliable)
+        if (!this.cachedFont || this.cachedFont.byteLength < 100000) {
             this.cachedFont = null;
             const fontSources = [
-                { id: 'Local', url: 'Cairo-Regular.ttf' },
-                { id: 'GitHub', url: 'https://github.com/googlefonts/cairo/raw/master/fonts/ttf/Cairo-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v28/SLXGc1nY6HkvangtZmpcMw.ttf' },
-                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' }
+                { id: 'Local', url: 'Amiri-Regular.ttf' },
+                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' },
+                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf' },
+                { id: 'Fontsource', url: 'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff' }
             ];
 
             let log = [];
@@ -189,7 +193,7 @@ class ContractManager {
                     const resp = await fetch(src.url, { mode: 'cors' });
                     if (resp.ok) {
                         const buf = await resp.arrayBuffer();
-                        if (buf.byteLength > 500000) {
+                        if (buf.byteLength > 100000) {
                             this.cachedFont = buf;
                             console.log(`✅ Font loaded from ${src.id}`);
 
@@ -202,7 +206,7 @@ class ContractManager {
                                         binary += String.fromCharCode(bytes[i]);
                                     }
                                     const base64Font = btoa(binary);
-                                    CloudDB.saveFont('Cairo-Regular', base64Font);
+                                    CloudDB.saveFont('Amiri-Regular', base64Font);
                                 } catch (e) { console.warn("Font sync failed", e); }
                             }
                             break;
@@ -267,13 +271,15 @@ class ContractManager {
             // Check all possible global names for the reshaper
             let reshaper = (typeof ArabicReshaper !== 'undefined') ? ArabicReshaper : (window.ArabicReshaper || null);
 
-            if (reshaper && !reshaper.convertArabic) {
-                if (reshaper.ArabicReshaper) reshaper = reshaper.ArabicReshaper;
-                else if (reshaper.default) reshaper = reshaper.default;
+            let convertFunc = null;
+            if (reshaper) {
+                if (typeof reshaper.convertArabic === 'function') convertFunc = reshaper.convertArabic;
+                else if (reshaper.ArabicReshaper && typeof reshaper.ArabicReshaper.convertArabic === 'function') convertFunc = reshaper.ArabicReshaper.convertArabic;
+                else if (reshaper.default && typeof reshaper.default.convertArabic === 'function') convertFunc = reshaper.default.convertArabic;
             }
 
-            if (reshaper && typeof reshaper.convertArabic === 'function') {
-                processedText = reshaper.convertArabic(processedText);
+            if (convertFunc) {
+                processedText = convertFunc(processedText);
             } else {
                 console.warn("⚠️ ArabicReshaper library missing!");
             }
