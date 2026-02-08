@@ -339,7 +339,29 @@ async function loadStudentData() {
                             console.log("Generating personalized PDF preview...");
                             const pdfBytes = await generatePdfFromTemplate(contract, student);
                             if (pdfBytes) {
-                                initPdfPreview(pdfBytes);
+                                // Direct Embed Fix
+                                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                                const url = window.URL.createObjectURL(blob);
+
+                                const loadingState = document.getElementById('pdf-loading-state');
+                                if (loadingState) loadingState.style.display = 'none';
+
+                                const previewContainer = document.getElementById('pdf-preview-container');
+                                if (previewContainer) {
+                                    previewContainer.style.display = 'block';
+                                    previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:600px; border:none;" title="Contract Preview"></iframe>`;
+
+                                    // Add Download Button for Backup
+                                    const dlBtn = document.createElement('a');
+                                    dlBtn.href = url;
+                                    dlBtn.download = `contract_${student.studentName || 'signed'}.pdf`;
+                                    dlBtn.className = 'btn btn-primary';
+                                    dlBtn.style.display = 'block';
+                                    dlBtn.style.textAlign = 'center';
+                                    dlBtn.style.marginTop = '15px';
+                                    dlBtn.innerHTML = '📥 تحميل نسخة PDF الآن';
+                                    previewContainer.parentNode.insertBefore(dlBtn, previewContainer.nextSibling);
+                                }
                             } else {
                                 throw new Error("Generated PDF is empty");
                             }
@@ -1006,9 +1028,29 @@ async function generatePdfFromTemplate(template, studentData) {
 
     const pages = pdfDoc.getPages();
 
-    // Simple Arabic text handler - NO REVERSAL (font handles RTL)
+    // Simple Arabic text handler - NO REVERSAL (font handles RTL) V4.0
     const fixArabic = (text) => {
         if (!text) return "";
+        if (!window.fixArabicLogged) {
+            console.log("✅ Using V4.0 Arabic Fix - No Reversal");
+            window.fixArabicLogged = true;
+
+            // Show version info on page (visual confirmation)
+            try {
+                const footer = document.querySelector('.steps-container') || document.body;
+                let vSpan = document.getElementById('appVersion');
+                if (!vSpan) {
+                    vSpan = document.createElement('div');
+                    vSpan.id = 'appVersion';
+                    vSpan.style.textAlign = 'center';
+                    vSpan.style.fontSize = '12px';
+                    vSpan.style.color = '#888';
+                    vSpan.style.marginTop = '10px';
+                    vSpan.textContent = 'Engineering Update: v4.1 (No Reversal)';
+                    footer.appendChild(vSpan);
+                }
+            } catch (e) { }
+        }
         return String(text);
     };
 
