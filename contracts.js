@@ -245,7 +245,7 @@ class ContractManager {
 
         let customFont = null;
         try {
-            if (this.cachedFont && this.cachedFont.byteLength > 500000) {
+            if (this.cachedFont && this.cachedFont.byteLength > 100000) {
                 customFont = await pdfDoc.embedFont(this.cachedFont);
             }
         } catch (e) {
@@ -253,7 +253,7 @@ class ContractManager {
         }
 
         if (!customFont) {
-            alert("⚠️ تنبيه: خط العقد العربي (Cairo) لم يتحمل بعد.\nيرجى التأكد من اتصال الإنترنت ثم المحاولة مرة أخرى.");
+            alert("⚠️ تنبيه: خط العقد العربي (Amiri) لم يتحمل بعد.\nيرجى التأكد من اتصال الإنترنت ثم المحاولة مرة أخرى.");
             throw new Error("Font not loaded");
         }
 

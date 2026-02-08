@@ -22,19 +22,19 @@ let lastY = 0;
 let cachedCairoFont = null;
 
 // Pre-fetch font immediately
-// Pre-fetch font immediately with hyper-resilience
+// Pre-fetch font immediately with hyper-resilience (using Amiri - more reliable)
 (async function prefetchFont() {
-    if (cachedCairoFont && cachedCairoFont.byteLength > 500000) return;
+    if (cachedCairoFont && cachedCairoFont.byteLength > 100000) return;
 
     // STRATEGY A: Try CloudDB (Firebase) first - Most reliable for parents
     if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
         try {
-            const cloudBase64 = await CloudDB.getFont('Cairo-Regular');
+            const cloudBase64 = await CloudDB.getFont('Amiri-Regular');
             if (cloudBase64) {
                 const binary = atob(cloudBase64);
                 const bytes = new Uint8Array(binary.length);
                 for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                if (bytes.byteLength > 500000) {
+                if (bytes.byteLength > 100000) {
                     cachedCairoFont = bytes.buffer;
                     console.log("✅ Arabic Font Pre-fetched (Cloud)");
                     return;
@@ -43,19 +43,19 @@ let cachedCairoFont = null;
         } catch (e) { }
     }
 
-    // STRATEGY B: Try Local and External sources
+    // STRATEGY B: Try Local and External sources (using Amiri font - more reliable)
     const sources = [
-        'Cairo-Regular.ttf',
-        'https://github.com/googlefonts/cairo/raw/master/fonts/ttf/Cairo-Regular.ttf',
-        'https://fonts.gstatic.com/s/cairo/v28/SLXGc1nY6HkvangtZmpcMw.ttf',
-        'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf'
+        'Amiri-Regular.ttf',
+        'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf',
+        'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf',
+        'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff'
     ];
     for (const url of sources) {
         try {
             const res = await fetch(url);
             if (res.ok) {
                 const buf = await res.arrayBuffer();
-                if (buf.byteLength > 500000) {
+                if (buf.byteLength > 100000) {
                     cachedCairoFont = buf;
                     console.log("✅ Arabic Font Pre-fetched (" + url + ")");
                     break;
@@ -872,8 +872,8 @@ async function generatePdfFromTemplate(template, studentData) {
         throw new Error("بيانات القالب غير متوفرة");
     }
 
-    // 1. Get Font (Cached) - Hyper-Resilient logic
-    if (!cachedCairoFont || cachedCairoFont.byteLength < 500000) {
+    // 1. Get Font (Cached) - Hyper-Resilient logic (using Amiri - more reliable)
+    if (!cachedCairoFont || cachedCairoFont.byteLength < 100000) {
         cachedCairoFont = null;
         let log = [];
 
@@ -881,12 +881,12 @@ async function generatePdfFromTemplate(template, studentData) {
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             try {
                 console.log("☁️ Attempting to load font from CloudDB...");
-                const cloudBase64 = await CloudDB.getFont('Cairo-Regular');
+                const cloudBase64 = await CloudDB.getFont('Amiri-Regular');
                 if (cloudBase64) {
                     const binary = atob(cloudBase64);
                     const bytes = new Uint8Array(binary.length);
                     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    if (bytes.byteLength > 500000) {
+                    if (bytes.byteLength > 100000) {
                         cachedCairoFont = bytes.buffer;
                         console.log("✅ Font loaded from CloudDB");
                     } else {
@@ -898,13 +898,13 @@ async function generatePdfFromTemplate(template, studentData) {
             } catch (e) { log.push(`Cloud: Error (${e.message})`); }
         }
 
-        // STRATEGY B: Fallback to External CDNs if cloud failed
+        // STRATEGY B: Fallback to External CDNs if cloud failed (using Amiri font - more reliable)
         if (!cachedCairoFont) {
             const fontSources = [
-                { id: 'Local', url: 'Cairo-Regular.ttf' },
-                { id: 'GitHub', url: 'https://github.com/googlefonts/cairo/raw/master/fonts/ttf/Cairo-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/cairo/v28/SLXGc1nY6HkvangtZmpcMw.ttf' },
-                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/cairo/Cairo-Regular.ttf' }
+                { id: 'Local', url: 'Amiri-Regular.ttf' },
+                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' },
+                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf' },
+                { id: 'Fontsource', url: 'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff' }
             ];
 
             for (const src of fontSources) {
@@ -912,7 +912,7 @@ async function generatePdfFromTemplate(template, studentData) {
                     const resp = await fetch(src.url, { mode: 'cors' });
                     if (resp.ok) {
                         const buf = await resp.arrayBuffer();
-                        if (buf.byteLength > 500000) {
+                        if (buf.byteLength > 100000) {
                             cachedCairoFont = buf;
                             console.log(`✅ Font loaded from ${src.id}`);
                             break;
