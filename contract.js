@@ -407,36 +407,54 @@ async function loadStudentData() {
                     }, 100);
                 } else {
                     // Normal Text Mode
+                    // Advanced HTML Variable Replacement (Smart Matching)
                     let content = contract.content;
-                    // Dynamic Placeholder Replacement
-                    const replacements = {
-                        '{اسم_الطالب}': student.studentName || '',
-                        '{اسم_ولي_الامر}': student.parentName || '',
-                        '{المسار}': student.customFields?.studentTrack || student.studentTrack || '',
-                        '{الصف}': student.studentGrade ? `الصف ${student.studentGrade}` : '',
-                        '{المرحلة_الدراسية}': student.studentLevel || '',
-                        '{السنة_الدراسية}': student.contractYear || '',
-                        '{البريد_الالكتروني}': student.parentEmail || '',
-                        '{رقم_الواتساب}': student.parentWhatsapp || '',
-                        '{التاريخ}': new Date().toLocaleString('ar-SA')
+                    const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+
+                    // Possible variables to replace
+                    const varMappings = {
+                        'اسمالطالب': student.studentName || '',
+                        'اسموليالامر': student.parentName || '',
+                        'المسار': student.customFields?.studentTrack || student.studentTrack || '',
+                        'الصف': student.studentGrade ? `الصف ${student.studentGrade}` : '',
+                        'المرحلةالدراسية': student.studentLevel || '',
+                        'المرحلة': student.studentLevel || '',
+                        'السنةالدراسية': student.contractYear || '',
+                        'بريدوليالامر': student.parentEmail || '',
+                        'البريدالالكتروني': student.parentEmail || '',
+                        'هويةالطالب': student.customFields?.nationalId || student.nationalId || '',
+                        'رقمهويةالطالب': student.customFields?.nationalId || student.nationalId || '',
+                        'هويةوليالامر': student.customFields?.parentNationalId || '',
+                        'رقمهويةوليالامر': student.customFields?.parentNationalId || '',
+                        'جوالوليالامر': student.parentWhatsapp || '',
+                        'رقمجوالوليالامر': student.parentWhatsapp || '',
+                        'العنوان': student.address || student.customFields?.address || '',
+                        'الجنسية': student.nationality || student.customFields?.nationality || '',
+                        'التاريخ': new Date().toLocaleDateString('ar-SA')
                     };
 
-                    // Add Custom Fields
-                    if (student.customFields) {
-                        try {
-                            const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                            (settings.customFields || []).forEach(def => {
-                                replacements[`{${def.label}}`] = student.customFields[def.id] || '';
-                            });
-                        } catch (e) { }
-                    }
-
-                    Object.entries(replacements).forEach(([key, val]) => {
-                        content = content.replace(new RegExp(key, 'g'), val);
+                    // Identify all {variables} in content
+                    const foundVars = content.match(/{[^}]+}/g) || [];
+                    foundVars.forEach(v => {
+                        const target = cleanVar(v);
+                        if (varMappings[target] !== undefined) {
+                            content = content.replace(v, varMappings[target]);
+                        } else if (student.customFields) {
+                            // Check custom fields by label
+                            try {
+                                const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                                const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
+                                if (fieldDef) {
+                                    content = content.replace(v, student.customFields[fieldDef.id] || '');
+                                }
+                            } catch (e) { }
+                        }
                     });
 
-                    const stampText = window.SCHOOL_STAMP_TEXT || 'الإدارة';
-                    const stampHtml = `<div class="school-stamp" style="width:100px; height:100px; border:4px double #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:20px auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
+                    const stampImage = window.SCHOOL_STAMP_IMAGE || (JSON.parse(localStorage.getItem('appSettings') || '{}')).stampImage;
+                    const stampHtml = stampImage
+                        ? `<div style="text-align:center; margin:20px 0;"><img src="${stampImage}" style="max-height:100px; width:auto;"></div>`
+                        : `<div class="school-stamp" style="width:100px; height:100px; border:4px double #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:20px auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${window.SCHOOL_STAMP_TEXT || 'الإدارة'}</div></div>`;
 
                     currentStudent.cachedContractContent = content;
                     currentStudent.cachedContractTitle = contract.title;
