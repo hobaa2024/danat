@@ -1138,97 +1138,96 @@
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Tab 2: Academic Structure -->
-                    <div id="tab-academic" class="tab-content">
-                        <div
-                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem;">
-                            <!-- Levels Manager -->
-                            <div class="card">
-                                <div class="card-header">
-                                    <h3 style="font-weight:700;">المراحل الدراسية</h3>
-                                    <p style="font-size:0.9rem; color:var(--text-muted)">أضف المراحل المتاحة في مدرستك
-                                        (ابتدائي، متوسط...)</p>
-                                </div>
-                                <div class="card-body" style="padding: 2rem;">
-                                    <div class="input-with-btn">
-                                        <input type="text" id="newLevelInput"
-                                            placeholder="أدخل اسم المرحلة (مثال: رياض أطفال)">
-                                        <button class="btn btn-secondary"
-                                            onclick="UI.addChip('schoolLevelsInput', 'newLevelInput')">إضافة</button>
-                                    </div>
-                                    <div id="levelsChips" class="chips-container"></div>
-                                    <textarea id="schoolLevelsInput" style="display:none"></textarea>
-                                    <!-- Hidden syncing field -->
-                                </div>
+                <!-- Tab 2: Academic Structure -->
+                <div id="tab-academic" class="tab-content">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem;">
+                        <!-- Levels Manager -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">المراحل الدراسية</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">أضف المراحل المتاحة في مدرستك
+                                    (ابتدائي، متوسط...)</p>
                             </div>
-
-                            <!-- Grades Manager -->
-                            <div class="card">
-                                <div class="card-header">
-                                    <h3 style="font-weight:700;">الصفوف الدراسية</h3>
-                                    <p style="font-size:0.9rem; color:var(--text-muted)">أضف الفصول المتاحة (الصف الأول،
-                                        الثاني...)</p>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="input-with-btn">
+                                    <input type="text" id="newLevelInput"
+                                        placeholder="أدخل اسم المرحلة (مثال: رياض أطفال)">
+                                    <button class="btn btn-secondary"
+                                        onclick="UI.addChip('schoolLevelsInput', 'newLevelInput')">إضافة</button>
                                 </div>
-                                <div class="card-body" style="padding: 2rem;">
-                                    <div class="input-with-btn">
-                                        <input type="text" id="newGradeInput" placeholder="أدخل اسم الصف">
-                                        <button class="btn btn-secondary"
-                                            onclick="UI.addChip('schoolGradesInput', 'newGradeInput')">إضافة</button>
-                                    </div>
-                                    <div id="gradesChips" class="chips-container"></div>
-                                    <textarea id="schoolGradesInput" style="display:none"></textarea>
-                                    <!-- Hidden syncing field -->
-                                </div>
+                                <div id="levelsChips" class="chips-container"></div>
+                                <textarea id="schoolLevelsInput" style="display:none"></textarea>
+                                <!-- Hidden syncing field -->
                             </div>
+                        </div>
 
-                            <!-- Custom Fields Manager -->
-                            <div class="card" style="grid-column: 1 / -1;">
-                                <div class="card-header">
-                                    <h3 style="font-weight:700;">بيانات إضافية للطالب (Custom Fields)</h3>
-                                    <p style="font-size:0.9rem; color:var(--text-muted)">أضف حقولاً مخصصة تظهر في نموذج
-                                        تسجيل الطالب (مثل: رقم الهوية، تاريخ الميلاد)</p>
-                                </div>
-                                <div class="card-body" style="padding: 2rem;">
-                                    <div class="input-with-btn">
-                                        <input type="text" id="newFieldLabel"
-                                            placeholder="اسم الحقل (مثال: رقم السجل المدني)">
-                                        <select id="newFieldType" style="max-width: 150px;">
-                                            <option value="text">نص</option>
-                                            <option value="number">رقم</option>
-                                            <option value="date">تاريخ</option>
-                                        </select>
-                                        <button class="btn btn-secondary" onclick="UI.addCustomField()">إضافة
-                                            حقل</button>
-                                    </div>
-                                    <div id="customFieldsList"></div>
-                                    <textarea id="customFieldsSetting" style="display:none"></textarea>
-                                    <!-- Hidden syncing field -->
-                                </div>
+                        <!-- Grades Manager -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">الصفوف الدراسية</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">أضف الفصول المتاحة (الصف الأول،
+                                    الثاني...)</p>
                             </div>
-
-                            <!-- Auto-Assign Contracts Card -->
-                            <div class="card" style="grid-column: 1 / -1;">
-                                <div class="card-header">
-                                    <h3 style="font-weight:700;">ربط العقود التلقائي بالمسارات</h3>
-                                    <p style="font-size:0.9rem; color:var(--text-muted)">اختر العقود الافتراضية لكل مسار
-                                        ليتم إسنادها تلقائياً عند استيراد الطلاب.</p>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="input-with-btn">
+                                    <input type="text" id="newGradeInput" placeholder="أدخل اسم الصف">
+                                    <button class="btn btn-secondary"
+                                        onclick="UI.addChip('schoolGradesInput', 'newGradeInput')">إضافة</button>
                                 </div>
-                                <div class="card-body"
-                                    style="padding: 2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                                    <div class="form-group">
-                                        <label for="nationalContractSetting">العقد الافتراضي للمسار (الأهلي/ثنائي
-                                            اللغة)</label>
-                                        <select id="nationalContractSetting">
-                                            <option value="">-- اختر العقد --</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="diplomaContractSetting">العقد الافتراضي لمسار (الدبلومة)</label>
-                                        <select id="diplomaContractSetting">
-                                            <option value="">-- اختر العقد --</option>
-                                        </select>
-                                    </div>
+                                <div id="gradesChips" class="chips-container"></div>
+                                <textarea id="schoolGradesInput" style="display:none"></textarea>
+                                <!-- Hidden syncing field -->
+                            </div>
+                        </div>
+
+                        <!-- Custom Fields Manager -->
+                        <div class="card" style="grid-column: 1 / -1;">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">بيانات إضافية للطالب (Custom Fields)</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">أضف حقولاً مخصصة تظهر في نموذج
+                                    تسجيل الطالب (مثل: رقم الهوية، تاريخ الميلاد)</p>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="input-with-btn">
+                                    <input type="text" id="newFieldLabel"
+                                        placeholder="اسم الحقل (مثال: رقم السجل المدني)">
+                                    <select id="newFieldType" style="max-width: 150px;">
+                                        <option value="text">نص</option>
+                                        <option value="number">رقم</option>
+                                        <option value="date">تاريخ</option>
+                                    </select>
+                                    <button class="btn btn-secondary" onclick="UI.addCustomField()">إضافة
+                                        حقل</button>
+                                </div>
+                                <div id="customFieldsList"></div>
+                                <textarea id="customFieldsSetting" style="display:none"></textarea>
+                                <!-- Hidden syncing field -->
+                            </div>
+                        </div>
+
+                        <!-- Auto-Assign Contracts Card -->
+                        <div class="card" style="grid-column: 1 / -1;">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">ربط العقود التلقائي بالمسارات</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">اختر العقود الافتراضية لكل مسار
+                                    ليتم إسنادها تلقائياً عند استيراد الطلاب.</p>
+                            </div>
+                            <div class="card-body"
+                                style="padding: 2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                                <div class="form-group">
+                                    <label for="nationalContractSetting">العقد الافتراضي للمسار (الأهلي/ثنائي
+                                        اللغة)</label>
+                                    <select id="nationalContractSetting">
+                                        <option value="">-- اختر العقد --</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="diplomaContractSetting">العقد الافتراضي لمسار (الدبلومة)</label>
+                                    <select id="diplomaContractSetting">
+                                        <option value="">-- اختر العقد --</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>

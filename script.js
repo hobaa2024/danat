@@ -1646,14 +1646,23 @@ ${link}
     // --- New Settings UI Functions ---
     switchSettingsTab(tabId) {
         // Update Buttons
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        const activeBtn = document.querySelector(`.tab-btn[onclick*="${tabId}"]`);
+        const buttons = document.querySelectorAll('.tab-btn');
+        buttons.forEach(btn => btn.classList.remove('active'));
+        const activeBtn = Array.from(buttons).find(btn => btn.getAttribute('onclick')?.includes(tabId));
         if (activeBtn) activeBtn.classList.add('active');
 
         // Update Content
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        const contents = document.querySelectorAll('.tab-content');
+        contents.forEach(content => {
+            content.classList.remove('active');
+            content.style.display = 'none';
+        });
+
         const content = document.getElementById(`tab-${tabId}`);
-        if (content) content.classList.add('active');
+        if (content) {
+            content.classList.add('active');
+            content.style.display = 'block';
+        }
     },
 
     // Chip Management
