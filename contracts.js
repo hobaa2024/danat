@@ -426,6 +426,7 @@ class ContractManager {
                 return str;
             } catch (e) {
                 console.warn("Arabic fixing failed:", e);
+                console.warn("Arabic fixing failed:", e);
                 return String(text);
             }
         };
@@ -435,51 +436,51 @@ class ContractManager {
             let text = field.variable;
             let isImage = false;
 
-            // Replace variables (Unified keys)
-            if (text === '{اسم_الطالب}') text = studentData.studentName || '';
-            else if (text === '{اسم_ولي_الامر}') text = studentData.parentName || '';
-            else if (text === '{المسار}') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-            else if (text === '{الصف}') text = studentData.studentGrade || '';
-            else if (text === '{المرحلة}' || text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
-            else if (text === '{السنة_الدراسية}') text = studentData.customFields?.contractYear || '';
-            else if (text === '{البريد_الالكتروني}') text = studentData.parentEmail || '';
-            else if (text === '{هوية_الطالب}' || text === '{رقم_هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
-            else if (text === '{هوية_ولي_الأمر}' || text === '{رقم_هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
-            else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
-            else if (text === '{العنوان}') text = studentData.address || studentData.customFields?.address || '';
-            else if (text === '{الجنسية}') text = studentData.nationality || studentData.customFields?.nationality || '';
-            else if (text === '{التاريخ}') text = new Date().toLocaleDateString('ar-SA');
-            else if (text === '{اليوم}') {
+            // Simple cleaning for variable matching (remove spaces and underscores to be flexible)
+            const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+            const target = cleanVar(text);
+
+            // Replace variables (Unified keys - Smart Matching)
+            if (target === 'اسمالطالب') text = studentData.studentName || '';
+            else if (target === 'اسموليالامر') text = studentData.parentName || '';
+            else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
+            else if (target === 'الصف') text = studentData.studentGrade || '';
+            else if (target === 'المرحلة' || target === 'المرحلةالدراسية') text = studentData.studentLevel || '';
+            else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || '';
+            else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمالهوية')
+                text = studentData.customFields?.nationalId || studentData.nationalId || '';
+            else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر')
+                text = studentData.customFields?.parentNationalId || '';
+            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب' || target === 'رقمجوال')
+                text = studentData.parentWhatsapp || '';
+            else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
+            else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
+            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+            else if (target === 'اليوم') {
                 const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
                 text = days[new Date().getDay()];
             }
-            else if (text === '{التوقيع}' || text === '{توقيع}' || text === '{مكان التوقيع}') {
+            else if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
                 text = studentData.signature;
                 isImage = true;
-                if (!text) console.warn("⚠️ Signature missing");
             }
-            else if (text === '{الهوية}' || text === '{مكان الهوية}') {
+            else if (target === 'الهوية' || target === 'مكانالهوية') {
                 text = studentData.idImage || studentData.idCardImage || null;
                 isImage = true;
-                if (!text) console.warn("⚠️ ID Image missing");
             }
-            else if (text === '{الختم}' || text === '{مكان الختم}') {
-                // Try to get settings from DB or LocalStorage
-                let settings = {};
+            else if (target === 'الختم' || target === 'مكانالختم') {
                 try {
-                    if (typeof db !== 'undefined' && db.getSettings) settings = db.getSettings();
-                    else settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                } catch (e) { console.error("Error reading settings for stamp", e); }
-
-                text = settings.stampImage || null;
+                    const settings = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
+                    text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
+                } catch (e) { }
                 isImage = true;
-                if (!text) console.warn("⚠️ Stamp image missing in settings");
             } else {
-                // Check Custom Fields
+                // Check Custom Fields directly by label (Smart Matching)
                 if (studentData.customFields) {
                     try {
                         const settings = (typeof db !== 'undefined') ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
-                        const fieldDef = (settings.customFields || []).find(f => `{${f.label}}` === text);
+                        const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
                         if (fieldDef) {
                             text = studentData.customFields[fieldDef.id] || '';
                         }

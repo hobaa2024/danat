@@ -1097,43 +1097,49 @@ async function generatePdfFromTemplate(template, studentData) {
         let text = field.variable;
         let isImage = false;
 
-        // Unified Variable Mapping (Admin + Parent Consistent)
-        if (text === '{اسم_الطالب}') text = studentData.studentName || '';
-        else if (text === '{اسم_ولي_الامر}') text = studentData.parentName || '';
-        else if (text === '{المسار}') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-        else if (text === '{الصف}') text = studentData.studentGrade || '';
-        else if (text === '{المرحلة}' || text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
-        else if (text === '{السنة_الدراسية}') text = studentData.customFields?.contractYear || '';
-        else if (text === '{البريد_الالكتروني}') text = studentData.parentEmail || '';
-        else if (text === '{هوية_الطالب}' || text === '{رقم_هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
-        else if (text === '{هوية_ولي_الأمر}' || text === '{رقم_هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
-        else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
-        else if (text === '{العنوان}') text = studentData.address || studentData.customFields?.address || '';
-        else if (text === '{الجنسية}') text = studentData.nationality || studentData.customFields?.nationality || '';
-        else if (text === '{التاريخ}') text = new Date().toLocaleDateString('ar-SA');
-        else if (text === '{اليوم}') {
+        // Simple cleaning for variable matching (remove spaces and underscores to be flexible)
+        const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+        const target = cleanVar(text);
+
+        // Unified Variable Mapping (Admin + Parent Consistent - Smart Matching)
+        if (target === 'اسمالطالب') text = studentData.studentName || '';
+        else if (target === 'اسموليالامر') text = studentData.parentName || '';
+        else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
+        else if (target === 'الصف') text = studentData.studentGrade || '';
+        else if (target === 'المرحلة' || target === 'المرحلةالدراسية') text = studentData.studentLevel || '';
+        else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || '';
+        else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
+        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية')
+            text = studentData.customFields?.nationalId || studentData.nationalId || '';
+        else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر')
+            text = studentData.customFields?.parentNationalId || '';
+        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
+            text = studentData.parentWhatsapp || '';
+        else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
+        else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
+        else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+        else if (target === 'اليوم') {
             const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
             text = days[new Date().getDay()];
         }
-        else if (text === '{التوقيع}' || text === '{توقيع}' || text === '{مكان التوقيع}') {
+        else if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
             text = studentData.signature || signatureData;
             isImage = true;
         }
-        else if (text === '{الهوية}' || text === '{مكان الهوية}') {
-            // Priority: Recently uploaded file > stored student data
+        else if (target === 'الهوية' || target === 'مكانالهوية') {
             text = uploadedFile || studentData.idImage || studentData.idCardImage || null;
             isImage = true;
         }
-        else if (text === '{الختم}' || text === '{مكان الختم}') {
+        else if (target === 'الختم' || target === 'مكانالختم') {
             const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
             text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
             isImage = true;
         } else {
-            // Custom Fields
+            // Check Custom Fields directly by label (Smart Matching)
             if (studentData.customFields) {
                 try {
                     const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                    const fieldDef = (settings.customFields || []).find(f => `{${f.label}}` === text);
+                    const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
                     if (fieldDef) {
                         text = studentData.customFields[fieldDef.id] || '';
                     }
