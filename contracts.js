@@ -2,6 +2,7 @@
 class ContractManager {
     constructor() {
         this.init();
+        this.initDB();
         this.variables = [
             { key: '{اسم_الطالب}', label: 'اسم الطالب' },
             { key: '{اسم_ولي_الامر}', label: 'اسم ولي الأمر' },
@@ -16,6 +17,48 @@ class ContractManager {
             { key: '{الختم}', label: 'ختم المدرسة' },
             { key: '{الهوية}', label: 'صورة الهوية' }
         ];
+    }
+
+    // --- IndexedDB for Large Files ---
+    initDB() {
+        const request = indexedDB.open("DanatContractsDB", 1);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains("pdfTemplates")) {
+                db.createObjectStore("pdfTemplates", { keyPath: "id" });
+            }
+        };
+        request.onsuccess = (e) => {
+            this.db = e.target.result;
+            console.log("✅ IndexedDB Ready for Large Contracts");
+        };
+        request.onerror = (e) => console.error("DB Error:", e);
+    }
+
+    async savePdfToDB(id, data) {
+        return new Promise((resolve) => {
+            if (!this.db) { resolve(false); return; }
+            const tx = this.db.transaction(["pdfTemplates"], "readwrite");
+            tx.objectStore("pdfTemplates").put({ id, data });
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+        });
+    }
+
+    async getPdfFromDB(id) {
+        return new Promise((resolve) => {
+            if (!this.db) { resolve(null); return; }
+            const tx = this.db.transaction(["pdfTemplates"], "readonly");
+            const req = tx.objectStore("pdfTemplates").get(id);
+            req.onsuccess = () => resolve(req.result ? req.result.data : null);
+            req.onerror = () => resolve(null);
+        });
+    }
+
+    async deletePdfFromDB(id) {
+        if (!this.db) return;
+        const tx = this.db.transaction(["pdfTemplates"], "readwrite");
+        tx.objectStore("pdfTemplates").delete(id);
     }
 
     init() {
@@ -119,38 +162,69 @@ class ContractManager {
         return contracts.find(c => c.isDefault) || contracts[0];
     }
 
-    saveContract(contract) {
-        const contracts = this.getContracts();
-
+    async saveContract(contract) {
         if (!contract.id) {
             contract.id = 'contract-' + Date.now();
             contract.createdAt = new Date().toISOString();
         }
 
+        const contracts = this.getContracts();
+        const index = contracts.findIndex(c => c.id === contract.id);
+
         if (contract.isDefault) {
             contracts.forEach(c => c.isDefault = false);
         }
 
-        const index = contracts.findIndex(c => c.id === contract.id);
+        // --- Handle Large PDF Data (Hybrid Storage) ---
+        // If contract has PDF data > 50KB, save to IndexedDB and remove from main object
+        let pdfDataToSave = null;
+        if (contract.pdfData && contract.pdfData.length > 50000) {
+            pdfDataToSave = contract.pdfData;
+            contract.hasLargePdf = true;
+            delete contract.pdfData; // Remove from lightweight storage object
+        }
+
+        // Save heavy data to IndexedDB
+        if (pdfDataToSave) {
+            try {
+                await this.savePdfToDB(contract.id, pdfDataToSave);
+            } catch (e) {
+                console.error("IndexedDB Save Failed:", e);
+                alert("تحذير: فشل حفظ ملف PDF الكبير في قاعدة البيانات المحلية.");
+                // Try to proceed anyway (might fail localStorage quota)
+                contract.pdfData = pdfDataToSave;
+            }
+        }
+
+        // Update Local List
         if (index >= 0) {
             contracts[index] = contract;
         } else {
             contracts.push(contract);
         }
 
-        // If it's a PDF template, we might want to store the large base64 data separately or be careful about quota.
-        // For localStorage, 5MB is the limit. A PDF might exceed this.
-        // Ideally we should use IndexedDB, but for now let's try localStorage and catch errors.
+        // Save Lightweight List to LocalStorage
         try {
             localStorage.setItem('contractTemplates', JSON.stringify(contracts));
-
-            // SYNC TO CLOUD for parent visibility
-            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-                CloudDB.saveContractTemplate(contract);
-            }
         } catch (e) {
-            alert('عذراً، مساحة التخزين ممتلئة. حاول استخدام ملف PDF أصغر حجماً.');
-            return null;
+            if (e.name === 'QuotaExceededError') {
+                alert('عذراً، مساحة التخزين ممتلئة. حاول حذف عقود قديمة.');
+                return null;
+            }
+        }
+
+        // --- SYNC TO CLOUD ---
+        // Re-attach data for Cloud Upload so parents can see it
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            const fullContract = { ...contract };
+            if (pdfDataToSave) {
+                fullContract.pdfData = pdfDataToSave;
+            }
+            // Upload to Firebase (CloudDB handles compression if needed)
+            CloudDB.saveContractTemplate(fullContract).then(() => {
+                if (typeof UI !== 'undefined' && UI.showNotification)
+                    UI.showNotification('تمت المزامنة مع السحابة بنجاح');
+            });
         }
 
         return contract;
@@ -164,11 +238,28 @@ class ContractManager {
             filtered[0].isDefault = true;
         }
 
+        // Clean up IndexedDB
+        this.deletePdfFromDB(id);
+
         localStorage.setItem('contractTemplates', JSON.stringify(filtered));
+
+        // Sync delete to Cloud?
+        // CloudDB.deleteContractTemplate(id); // Ideally
     }
 
     // Generate Final PDF from Template
     async generatePdfFromTemplate(contractTemplate, studentData) {
+        // Load heavy data if missing
+        if (!contractTemplate.pdfData && contractTemplate.hasLargePdf) {
+            console.log("📥 Loading PDF Template from IndexedDB...");
+            const data = await this.getPdfFromDB(contractTemplate.id);
+            if (data) {
+                contractTemplate.pdfData = data;
+            } else {
+                throw new Error("تعذر تحميل ملف PDF من قاعدة البيانات المحلية. يرجى إعادة رفع القالب.");
+            }
+        }
+
         if (!contractTemplate.pdfData || !contractTemplate.pdfFields) {
             throw new Error("بيانات قالب PDF غير صالحة");
         }
