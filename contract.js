@@ -1072,16 +1072,21 @@ async function generatePdfFromTemplate(template, studentData) {
 
     const pages = pdfDoc.getPages();
 
-    // Advanced Arabic text handler (Reshaper V4.2)
+    // Advanced Arabic Text Processor (Reshape + Reverse for PDF compatibility)
     const fixArabic = (text) => {
         if (!text) return "";
         try {
-            let processedText = String(text).trim();
-            // 1. Reshape Arabic Characters (Join them)
+            let str = String(text).trim();
+            // 1. Reshape
             if (typeof ArabicReshaper !== 'undefined') {
-                processedText = ArabicReshaper.reshape(processedText);
+                str = ArabicReshaper.reshape(str);
             }
-            return processedText;
+            // 2. Reverse for PDF-Lib compatibility
+            const hasArabic = /[\u0600-\u06FF]/.test(str);
+            if (hasArabic) {
+                return str.split('').reverse().join('');
+            }
+            return str;
         } catch (e) {
             console.warn("Arabic fixing failed:", e);
             return String(text);
@@ -1100,9 +1105,11 @@ async function generatePdfFromTemplate(template, studentData) {
         else if (text === '{المرحلة}' || text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
         else if (text === '{السنة_الدراسية}') text = studentData.customFields?.contractYear || '';
         else if (text === '{البريد_الالكتروني}') text = studentData.parentEmail || '';
-        else if (text === '{هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
-        else if (text === '{هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
-        else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
+        else if (text === '{هوية_الطالب}' || text === '{رقم_هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
+        else if (text === '{هوية_ولي_الأمر}' || text === '{رقم_هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
+        else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
+        else if (text === '{العنوان}') text = studentData.address || studentData.customFields?.address || '';
+        else if (text === '{الجنسية}') text = studentData.nationality || studentData.customFields?.nationality || '';
         else if (text === '{التاريخ}') text = new Date().toLocaleDateString('ar-SA');
         else if (text === '{اليوم}') {
             const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -1173,9 +1180,20 @@ async function generatePdfFromTemplate(template, studentData) {
                 }
 
                 if (img) {
-                    const dims = img.scaleToFit(120, 60);
-                    page.drawImage(img, { x: pdfX, y: pdfY - dims.height, width: dims.width, height: dims.height });
-                    console.log(`✅ Image field embedded: ${field.variable}`);
+                    let fitW = 120, fitH = 60;
+                    if (field.variable.includes('الختم')) { fitW = 85; fitH = 85; }
+                    else if (field.variable.includes('الهوية')) { fitW = 180; fitH = 120; }
+
+                    const dims = img.scaleToFit(fitW, fitH);
+                    const yAdjustment = field.variable.includes('الختم') ? dims.height / 1.5 : dims.height;
+
+                    page.drawImage(img, {
+                        x: pdfX,
+                        y: pdfY - yAdjustment,
+                        width: dims.width,
+                        height: dims.height
+                    });
+                    console.log(`✅ Image embedded: ${field.variable}`);
                 }
             } catch (e) {
                 console.warn("Failed to embed image field:", field.variable, e);

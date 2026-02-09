@@ -14,9 +14,11 @@ class ContractManager {
             { key: '{رقم_الواتساب}', label: 'رقم الواتساب' },
             { key: '{التاريخ}', label: 'التاريخ الحالي' },
             { key: '{اليوم}', label: 'اليوم الحالي (اسم)' },
-            { key: '{هوية_الطالب}', label: 'رقم هوية الطالب' },
-            { key: '{هوية_ولي_الأمر}', label: 'رقم هوية ولي الأمر' },
-            { key: '{جوال_ولي_الأمر}', label: 'رقم جوال ولي الأمر' },
+            { key: '{رقم_هوية_الطالب}', label: 'رقم هوية الطالب' },
+            { key: '{رقم_هوية_ولي_الأمر}', label: 'رقم هوية ولي الأمر' },
+            { key: '{رقم_جوال_ولي_الأمر}', label: 'رقم جوال ولي الأمر' },
+            { key: '{العنوان}', label: 'العنوان' },
+            { key: '{الجنسية}', label: 'الجنسية' },
             { key: '{توقيع}', label: 'توقيع ولي الأمر' },
             { key: '{الختم}', label: 'ختم المدرسة' },
             { key: '{الهوية}', label: 'صورة الهوية' }
@@ -400,21 +402,23 @@ class ContractManager {
         const pages = pdfDoc.getPages();
 
         // Advanced Arabic text handler (Reshaper + Bidi Joining)
+        // Advanced Arabic text handler (Reshaper + Reversal for PDF compatibility)
         const fixArabic = (text) => {
             if (!text) return "";
             try {
-                // Ensure text is string and trim
-                let processedText = String(text).trim();
+                let str = String(text).trim();
 
                 // 1. Reshape Arabic Characters (Join them)
                 if (typeof ArabicReshaper !== 'undefined') {
-                    processedText = ArabicReshaper.reshape(processedText);
+                    str = ArabicReshaper.reshape(str);
                 }
 
-                // 2. We don't need to reverse if the font is embedded correctly with fontkit 
-                // and we're using a single line drawing. But some PDF readers need reversal.
-                // Let's keep it simple for now, the Reshaper handles the glyph joining.
-                return processedText;
+                // 2. Reverse for PDF-Lib (Standard Bidi Fix for Arabic)
+                const hasArabic = /[\u0600-\u06FF]/.test(str);
+                if (hasArabic) {
+                    return str.split('').reverse().join('');
+                }
+                return str;
             } catch (e) {
                 console.warn("Arabic fixing failed:", e);
                 return String(text);
@@ -434,9 +438,11 @@ class ContractManager {
             else if (text === '{المرحلة}' || text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
             else if (text === '{السنة_الدراسية}') text = studentData.customFields?.contractYear || '';
             else if (text === '{البريد_الالكتروني}') text = studentData.parentEmail || '';
-            else if (text === '{هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
-            else if (text === '{هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
-            else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
+            else if (text === '{هوية_الطالب}' || text === '{رقم_هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
+            else if (text === '{هوية_ولي_الأمر}' || text === '{رقم_هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
+            else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
+            else if (text === '{العنوان}') text = studentData.address || studentData.customFields?.address || '';
+            else if (text === '{الجنسية}') text = studentData.nationality || studentData.customFields?.nationality || '';
             else if (text === '{التاريخ}') text = new Date().toLocaleDateString('ar-SA');
             else if (text === '{اليوم}') {
                 const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -520,14 +526,22 @@ class ContractManager {
                     }
 
                     if (image) {
-                        const imgDims = image.scaleToFit(120, 60);
+                        // Precise sizes for different image types
+                        let fitW = 120, fitH = 60;
+                        if (field.variable.includes('الختم')) { fitW = 85; fitH = 85; }
+                        else if (field.variable.includes('الهوية')) { fitW = 180; fitH = 120; }
+
+                        const imgDims = image.scaleToFit(fitW, fitH);
+                        // Vertical adjustment to center image better in the designated area
+                        const yAdjustment = field.variable.includes('الختم') ? imgDims.height / 1.5 : imgDims.height;
+
                         page.drawImage(image, {
                             x: pdfX,
-                            y: pdfY - imgDims.height, // Adjust for bottom-left anchor
+                            y: pdfY - yAdjustment,
                             width: imgDims.width,
                             height: imgDims.height,
                         });
-                        console.log(`✅ Image embedded at ${pdfX},${pdfY}`);
+                        console.log(`✅ Image embedded: ${field.variable}`);
                     }
                 } catch (err) {
                     console.error("Error processing/embedding image:", err);

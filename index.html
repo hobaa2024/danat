@@ -1232,128 +1232,127 @@
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Tab 3: Security -->
-                    <!-- Security Tab removed (content moved to General for accessibility) -->
-                    <div id="tab-security" class="tab-content">
-                        <div style="padding: 3rem; text-align: center; color: var(--text-muted);">
-                            <p>تم نقل إعدادات الأمان إلى تبويب "الهوية العامة" لتسهيل الوصول إليها.</p>
-                            <button class="btn btn-secondary" onclick="UI.switchSettingsTab('general')"
-                                style="margin-top: 1rem;">الذهاب هناك</button>
+                <!-- Tab 3: Security -->
+                <div id="tab-security" class="tab-content">
+                    <div style="padding: 3rem; text-align: center; color: var(--text-muted);">
+                        <p>تم نقل إعدادات الأمان إلى تبويب "الهوية العامة" لتسهيل الوصول إليها.</p>
+                        <button class="btn btn-secondary" onclick="UI.switchSettingsTab('general')"
+                            style="margin-top: 1rem;">الذهاب هناك</button>
+                    </div>
+                </div>
+
+                <!-- Tab 4: System (Keep existing) -->
+                <div id="tab-system" class="tab-content">
+                    <!-- Cloud Settings (Existing) -->
+                    <div class="card" style="box-shadow: var(--shadow-md);">
+                        <div class="card-header"
+                            style="padding: 1.5rem; border-bottom: 1px solid var(--border-color); background: rgba(16, 185, 129, 0.03);">
+                            <h3 style="display: flex; align-items: center; gap: 10px;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--success-main)"
+                                    stroke-width="2">
+                                    <path
+                                        d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+                                    </path>
+                                </svg>
+                                المزامنة السحابية (Firebase)
+                            </h3>
+                        </div>
+                        <div class="card-body" style="padding: 2rem;">
+                            <div id="cloudStatusSettings" class="status-badge status-pending"
+                                style="margin-bottom: 1.5rem;">
+                                جاري التحقق...</div>
+                            <div style="display: grid; gap: 1rem; grid-template-columns: 1fr 1fr;">
+                                <button class="btn btn-primary" onclick="CloudDB.syncAllLocalToCloud()">رفع البيانات
+                                    للسحابة</button>
+                                <button class="btn btn-secondary" onclick="CloudDB.syncCloudToLocal()">تحميل من
+                                    السحابة</button>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Tab 4: System (Keep existing) -->
-                    <div id="tab-system" class="tab-content">
-                        <!-- Cloud Settings (Existing) -->
-                        <div class="card" style="box-shadow: var(--shadow-md);">
-                            <div class="card-header"
-                                style="padding: 1.5rem; border-bottom: 1px solid var(--border-color); background: rgba(16, 185, 129, 0.03);">
-                                <h3 style="display: flex; align-items: center; gap: 10px;">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-                                        stroke="var(--success-main)" stroke-width="2">
-                                        <path
-                                            d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
-                                        </path>
-                                    </svg>
-                                    المزامنة السحابية (Firebase)
-                                </h3>
-                            </div>
-                            <div class="card-body" style="padding: 2rem;">
-                                <div id="cloudStatusSettings" class="status-badge status-pending"
-                                    style="margin-bottom: 1.5rem;">
-                                    جاري التحقق...</div>
-                                <div style="display: grid; gap: 1rem; grid-template-columns: 1fr 1fr;">
-                                    <button class="btn btn-primary" onclick="CloudDB.syncAllLocalToCloud()">رفع البيانات
-                                        للسحابة</button>
-                                    <button class="btn btn-secondary" onclick="CloudDB.syncCloudToLocal()">تحميل من
-                                        السحابة</button>
-                                </div>
-                            </div>
+                    <!-- Data Backup & Restore -->
+                    <div class="card" style="margin-top: 2rem; box-shadow: var(--shadow-md);">
+                        <div class="card-header" style="padding: 1.5rem; border-bottom: 1px solid var(--border-color);">
+                            <h3
+                                style="display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text-primary);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                النسخ الاحتياطي والاستعادة
+                            </h3>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 5px;">
+                                إدارة بيانات النظام وحمايتها من الضياع.
+                            </p>
                         </div>
+                        <div class="card-body" style="padding: 2rem;">
 
-                        <!-- Data Backup & Restore -->
-                        <div class="card" style="margin-top: 2rem; box-shadow: var(--shadow-md);">
-                            <div class="card-header"
-                                style="padding: 1.5rem; border-bottom: 1px solid var(--border-color);">
-                                <h3
-                                    style="display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text-primary);">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                        <polyline points="7 10 12 15 17 10"></polyline>
-                                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                                    </svg>
-                                    النسخ الاحتياطي والاستعادة
-                                </h3>
-                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 5px;">
-                                    إدارة بيانات النظام وحمايتها من الضياع.
-                                </p>
-                            </div>
-                            <div class="card-body" style="padding: 2rem;">
-
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; flex-wrap: wrap;">
+                                <!-- Excel Export -->
                                 <div
-                                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; flex-wrap: wrap;">
-                                    <!-- Excel Export -->
-                                    <div
-                                        style="border: 1px solid var(--border-color); padding: 1.5rem; border-radius: 8px;">
-                                        <h4 style="margin-top:0; color: #10b981;">📊 تقارير إكسل (Excel)</h4>
-                                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
-                                            لأغراض الطباعة والمراجعة فقط. قد لا تحتوي على التواقيع.
-                                        </p>
-                                        <button class="btn btn-secondary" onclick="UI.backupAllData()"
-                                            style="width: 100%; justify-content: center;">
-                                            تحميل ملف إكسل
+                                    style="border: 1px solid var(--border-color); padding: 1.5rem; border-radius: 8px;">
+                                    <h4 style="margin-top:0; color: #10b981;">📊 تقارير إكسل (Excel)</h4>
+                                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+                                        لأغراض الطباعة والمراجعة فقط. قد لا تحتوي على التواقيع.
+                                    </p>
+                                    <button class="btn btn-secondary" onclick="UI.backupAllData()"
+                                        style="width: 100%; justify-content: center;">
+                                        تحميل ملف إكسل
+                                    </button>
+                                </div>
+
+                                <!-- System Snapshot -->
+                                <div
+                                    style="border: 1px solid var(--primary-main); background: rgba(99, 102, 241, 0.02); padding: 1.5rem; border-radius: 8px;">
+                                    <h4 style="margin-top:0; color: var(--primary-main);">💾 لقطة كاملة للنظام
+                                        (JSON)
+                                    </h4>
+                                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+                                        للنسخ الاحتياطي الحقيقي. يحفظ التواقيع، الصور، وكل شيء بدقة 100%.
+                                    </p>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn btn-primary" onclick="UI.exportSystemJSON()"
+                                            style="flex: 1; justify-content: center;">
+                                            حفظ نسخة كاملة
+                                        </button>
+                                        <button class="btn btn-warning"
+                                            onclick="document.getElementById('jsonrestoreInput').click()"
+                                            style="flex: 1; justify-content: center; background: #f59e0b; border-color: #f59e0b; color: white;">
+                                            استعادة
                                         </button>
                                     </div>
-
-                                    <!-- System Snapshot -->
-                                    <div
-                                        style="border: 1px solid var(--primary-main); background: rgba(99, 102, 241, 0.02); padding: 1.5rem; border-radius: 8px;">
-                                        <h4 style="margin-top:0; color: var(--primary-main);">💾 لقطة كاملة للنظام
-                                            (JSON)
-                                        </h4>
-                                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
-                                            للنسخ الاحتياطي الحقيقي. يحفظ التواقيع، الصور، وكل شيء بدقة 100%.
-                                        </p>
-                                        <div style="display: flex; gap: 10px;">
-                                            <button class="btn btn-primary" onclick="UI.exportSystemJSON()"
-                                                style="flex: 1; justify-content: center;">
-                                                حفظ نسخة كاملة
-                                            </button>
-                                            <button class="btn btn-warning"
-                                                onclick="document.getElementById('jsonrestoreInput').click()"
-                                                style="flex: 1; justify-content: center; background: #f59e0b; border-color: #f59e0b; color: white;">
-                                                استعادة
-                                            </button>
-                                        </div>
-                                        <input type="file" id="jsonrestoreInput" accept=".json" hidden
-                                            onchange="UI.importSystemJSON(this)">
-                                    </div>
+                                    <input type="file" id="jsonrestoreInput" accept=".json" hidden
+                                        onchange="UI.importSystemJSON(this)">
                                 </div>
-
                             </div>
+
                         </div>
+                    </div>
 
-                        <!-- Danger Zone (Existing) -->
-                        <div class="card"
-                            style="margin-top: 2rem; border: 2px solid var(--danger-main); background: rgba(239, 68, 68, 0.02);">
-                            <div class="card-header" style="background: rgba(239, 68, 68, 0.05); padding: 1.5rem;">
-                                <h3 style="color: var(--danger-main);">منطقة الخطر</h3>
-                            </div>
-                            <div class="card-body"
-                                style="padding: 2rem; display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <p style="font-weight: 700;">حذف جميع البيانات المحلية</p>
-                                    <p style="font-size: 0.9rem; color: var(--text-muted);">سيتم مسح كافة البيانات من
-                                        هذا
-                                        الجهاز فقط.</p>
-                                </div>
+                    <!-- Danger Zone (Existing) -->
+                    <div class="card"
+                        style="margin-top: 2rem; border: 2px solid var(--danger-main); background: rgba(239, 68, 68, 0.02);">
+                        <div class="card-header" style="background: rgba(239, 68, 68, 0.05); padding: 1.5rem;">
+                            <h3 style="color: var(--danger-main);">منطقة الخطر</h3>
+                        </div>
+                        <div class="card-body"
+                            style="padding: 2rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <p style="font-weight: 700;">حذف جميع البيانات المحلية</p>
+                                <p style="font-size: 0.9rem; color: var(--text-muted);">سيتم مسح كافة البيانات من
+                                    هذا
+                                    <button class="btn btn-danger" onclick="DB.clearAllData()">مسح كافة
+                                        البيانات</button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
     </main>
 
     <!-- New Student Modal -->
