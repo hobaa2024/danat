@@ -266,6 +266,8 @@ class ContractManager {
     async generatePdfFromTemplate(contractTemplate, studentData) {
         if (!studentData) throw new Error("بيانات الطالب غير متوفرة");
 
+        console.log("🛠️ Re-building PDF for:", studentData.studentName);
+
         // Load heavy data if missing
         if (!contractTemplate.pdfData && contractTemplate.hasLargePdf) {
             const data = await this.getPdfFromDB(contractTemplate.id);
@@ -274,27 +276,52 @@ class ContractManager {
         }
 
         if (!contractTemplate.pdfData || !contractTemplate.pdfFields) {
-            throw new Error("بيانات قالب PDF غير صالح");
+            throw new Error("بيانات قالب PDF غير صالحة");
         }
 
         const { PDFDocument, rgb } = PDFLib;
         const fontkit = window.fontkit;
 
-        // Hyper-Resilient Font Loading
+        // Ensure Arabic Reshaper is LOADED before anything else (Critical Fix)
+        if (typeof ArabicReshaper === 'undefined') {
+            console.log("📥 Loading ArabicReshaper library...");
+            try {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                    script.onload = resolve;
+                    script.onerror = () => {
+                        console.error("Reshaper CDN Failed, trying fallback...");
+                        const fallback = document.createElement('script');
+                        fallback.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                        fallback.onload = resolve;
+                        fallback.onerror = reject;
+                        document.head.appendChild(fallback);
+                    };
+                    document.head.appendChild(script);
+                });
+            } catch (e) {
+                console.error("Critical: Could not load ArabicReshaper");
+            }
+        }
+
+        // Resilient Font Loading
         if (!this.cachedFont || this.cachedFont.byteLength < 50000) {
-            const sources = [
-                { id: 'Local', url: 'Amiri-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' }
+            const fontSources = [
+                'Amiri-Regular.ttf',
+                'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf',
+                'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf'
             ];
-            for (const src of sources) {
+            for (const url of fontSources) {
                 try {
-                    const res = await fetch(src.url);
+                    const res = await fetch(url);
                     if (res.ok) {
                         this.cachedFont = await res.arrayBuffer();
-                        break;
+                        if (this.cachedFont.byteLength > 50000) break;
                     }
                 } catch (e) { }
             }
+            // Absolute Fallback
             if (!this.cachedFont && typeof GLOBAL_CAIRO_FONT !== 'undefined') {
                 const b = atob(GLOBAL_CAIRO_FONT);
                 const bytes = new Uint8Array(b.length);
@@ -320,7 +347,7 @@ class ContractManager {
 
         const pages = pdfDoc.getPages();
 
-        // Advanced Arabic Fixer (Bidi-Aware)
+        // --- CRITICAL: Advanced Bidi Arabic Fixer ---
         const fixArabic = (text) => {
             if (!text) return "";
             try {
@@ -328,17 +355,17 @@ class ContractManager {
                 const hasArabic = /[\u0600-\u06FF]/.test(str);
                 if (!hasArabic) return str;
 
-                // Reshape Arabic parts
+                // 1. Reshape (Join the characters)
                 if (typeof ArabicReshaper !== 'undefined') {
                     str = ArabicReshaper.reshape(str);
+                } else {
+                    console.warn("ArabicReshaper missing - text will be disconnected");
                 }
 
-                // Smart Reversing for PDF-lib (which doesn't support RTL)
-                // We reverse the string but then FIX the English/Numbers segments
+                // 2. Reverse with Bidi Awareness (PDF-Lib needs reversed string for RTL)
                 let reversed = str.split('').reverse().join('');
 
-                // Match English/Number segments in the reversed string and reverse them back
-                // This is a common hack for RTL in pdf-lib
+                // 3. Re-reverse segments that should be LTR (English words & Numbers)
                 const segments = reversed.match(/[a-zA-Z0-9\s.@:/+]{2,}/g);
                 if (segments) {
                     segments.forEach(segment => {
@@ -357,21 +384,21 @@ class ContractManager {
             let isImage = false;
             const target = cleanVar(text);
 
-            // Mapping (Inclusive)
+            // Inclusive Mapping
             if (target === 'اسمالطالب' || target === 'الطالب') text = studentData.studentName || '';
-            else if (target === 'اسموليالامر' || target === 'وليالامر') text = studentData.parentName || '';
-            else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
+            else if (target === 'اسموليالامر' || target === 'وليالامر' || target === 'الأب') text = studentData.parentName || '';
+            else if (target === 'المسار' || target === 'المسارالتعليمي') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
             else if (target === 'الصف') text = studentData.studentGrade || '';
-            else if (target === 'المرحلة' || target === 'المرحلةالدراسية') text = studentData.studentLevel || '';
-            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'رقمالهوية')
+            else if (target === 'المرحلة' || target === 'المرحلةالدراسية' || target === 'القسم') text = studentData.studentLevel || '';
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'رقمالهوية' || target === 'الهوية')
                 text = studentData.customFields?.nationalId || studentData.nationalId || '';
             else if (target === 'هويةوليالامر' || target === 'رقمهويةوليالامر' || target === 'هويةوليالأمر')
                 text = studentData.customFields?.parentNationalId || studentData.parentNationalId || '';
-            else if (target === 'جوالوليالامر' || target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'جوال')
+            else if (target === 'جوالوليالامر' || target === 'رقمجوالوليالأمر' || target === 'جوال')
                 text = studentData.parentWhatsapp || '';
             else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
             else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+            else if (target === 'التاريخ' || target === 'تاريخاليوم') text = new Date().toLocaleDateString('ar-SA');
             else if (target === 'التوقيع' || target === 'مكانالتوقيع' || target === 'توقيع') {
                 text = studentData.signature || studentData.signatureData; isImage = true;
             }
@@ -399,6 +426,10 @@ class ContractManager {
             const { width: pWidth, height: pHeight } = page.getSize();
             const scaleX = pWidth / field.viewportWidth;
             const scaleY = pHeight / field.viewportHeight;
+
+            // Scaled Dimensions for the field
+            const fW = field.width * scaleX;
+            const fH = field.height * scaleY;
             const pdfX = field.x * scaleX;
             const pdfY = pHeight - (field.y * scaleY);
 
@@ -406,27 +437,45 @@ class ContractManager {
                 try {
                     let base64 = text;
                     if (text.includes(',')) base64 = text.split(',')[1];
-
                     let image;
-                    try {
-                        image = await pdfDoc.embedPng(base64);
-                    } catch (e) {
+                    try { image = await pdfDoc.embedPng(base64); } catch (e) {
                         try { image = await pdfDoc.embedJpg(base64); } catch (e2) { continue; }
                     }
 
                     if (image) {
-                        let fitW = 120, fitH = 60;
-                        if (target.includes('ختم')) { fitW = 100; fitH = 100; }
+                        let fitW = fW * 0.9, fitH = fH * 0.9;
+                        if (target.includes('ختم')) { fitW = 90; fitH = 90; }
                         else if (target.includes('هوية')) { fitW = 200; fitH = 140; }
 
                         const imgDims = image.scaleToFit(fitW, fitH);
-                        const yAdj = target.includes('ختم') ? imgDims.height / 1.5 : imgDims.height;
-                        page.drawImage(image, { x: pdfX, y: pdfY - yAdj, width: imgDims.width, height: imgDims.height });
+                        // Center image in the field
+                        const cx = pdfX + (fW - imgDims.width) / 2;
+                        const cy = pdfY - imgDims.height - (fH - imgDims.height) / 2;
+                        page.drawImage(image, { x: cx, y: cy, width: imgDims.width, height: imgDims.height });
                     }
                 } catch (err) { console.error("PDF Img Fail", err); }
             } else {
                 try {
-                    page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 14, size: 11, font: customFont, color: rgb(0, 0, 0) });
+                    const fontSize = 11;
+                    const processedText = fixArabic(text);
+                    const textWidth = customFont.widthOfTextAtSize(processedText, fontSize);
+
+                    // --- SMART ALIGNMENT ---
+                    // Center the text in the box to avoid overlapping borders
+                    let drawX = pdfX + (fW - textWidth) / 2;
+                    // If text is wider than the field, align to the right (RTL style)
+                    if (textWidth > fW) drawX = pdfX + fW - textWidth - 2;
+
+                    // Vertical centering adjustment
+                    const drawY = pdfY - (fH / 2) - 4; // Adjust 4 based on font baseline
+
+                    page.drawText(processedText, {
+                        x: drawX,
+                        y: drawY,
+                        size: fontSize,
+                        font: customFont,
+                        color: rgb(0, 0, 0)
+                    });
                 } catch (err) { }
             }
         }
