@@ -783,22 +783,40 @@ const UI = {
             const rect = btn.getBoundingClientRect();
             const viewportWidth = document.documentElement.clientWidth;
 
+            // 1. Show momentarily to calculate dimensions
             menu.style.display = 'flex';
+            menu.style.visibility = 'hidden';
             menu.style.position = 'fixed';
-            menu.style.top = (rect.bottom + 2) + 'px';
 
-            // DECISION: If button is on the far left, open TOWARDS THE RIGHT
+            // 2. Calculate vertical position (Smart Direction)
+            const menuHeight = menu.offsetHeight || 200;
+            const spaceBelow = window.innerHeight - rect.bottom;
+
+            // Check if we should open UPWARDS
+            if (spaceBelow < menuHeight && rect.top > menuHeight) {
+                menu.style.top = (rect.top - menuHeight - 5) + 'px';
+                menu.style.transformOrigin = 'bottom right';
+            } else {
+                // Open Downwards (Default)
+                menu.style.top = (rect.bottom + 5) + 'px';
+                menu.style.transformOrigin = 'top right';
+            }
+
+            // 3. Calculate horizontal position
             if (rect.left < 250) {
+                // Too close to left edge? Open towards right
                 menu.style.left = rect.left + 'px';
                 menu.style.right = 'auto';
             } else {
-                // Otherwise pin to right edge of button (opens to left)
+                // Default: Open towards left (align right edge)
                 const rightDist = viewportWidth - rect.right;
                 menu.style.left = 'auto';
                 menu.style.right = rightDist + 'px';
             }
 
-            menu.style.zIndex = '9999999';
+            // 4. Finalize display
+            menu.style.zIndex = '99999999';
+            menu.style.visibility = 'visible';
             menu.classList.add('active');
         }
     },

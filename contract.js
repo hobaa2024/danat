@@ -170,9 +170,25 @@ async function loadStudentData() {
     let contract = null;
 
     try {
+        // Try local first
         const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
         if (settings.schoolPhone) window.SCHOOL_WHATSAPP = settings.schoolPhone;
         if (settings.schoolStampText) window.SCHOOL_STAMP_TEXT = settings.schoolStampText;
+        if (settings.stampImage) window.SCHOOL_STAMP_IMAGE = settings.stampImage;
+
+        // Try fetch remote settings if possible (Critical for Parent View to get stamp image)
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            CloudDB.getSettings().then(cloudSettings => {
+                if (cloudSettings) {
+                    if (cloudSettings.schoolStampText) window.SCHOOL_STAMP_TEXT = cloudSettings.schoolStampText;
+                    if (cloudSettings.stampImage) window.SCHOOL_STAMP_IMAGE = cloudSettings.stampImage;
+                    if (cloudSettings.schoolLogo) window.SCHOOL_LOGO = cloudSettings.schoolLogo;
+                    // Update local storage so future loads use it
+                    localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
+                    console.log("✅ Remote settings loaded (Stamp/Logo updated)");
+                }
+            }).catch(e => console.warn("Remote settings fetch failed", e));
+        }
     } catch (e) { }
 
     if (compressedData) {
@@ -798,6 +814,15 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
     signatureData = canvas.toDataURL('image/png');
     const contractNo = 'CON-' + Date.now().toString().slice(-6);
     const now = new Date();
+    // Update global currentStudent object immediately so generates PDF correctly
+    if (typeof currentStudent !== 'undefined') {
+        currentStudent.contractStatus = 'signed';
+        currentStudent.signedAt = now.toISOString();
+        currentStudent.signature = signatureData;
+        currentStudent.idImage = uploadedFile;
+        currentStudent.contractNo = contractNo;
+    }
+
     if (studentIdToSave) {
         const data = { contractStatus: 'signed', signedAt: now.toISOString(), signature: signatureData, idImage: uploadedFile, contractNo };
         if (typeof CloudDB !== 'undefined') await CloudDB.updateContract(String(studentIdToSave), data);
@@ -805,10 +830,29 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
         const idx = students.findIndex(s => String(s.id) === String(studentIdToSave));
         if (idx !== -1) { Object.assign(students[idx], data); localStorage.setItem('students', JSON.stringify(students)); }
     }
-    showSuccessAfterSigning({
-        studentName: document.getElementById('contractStudentName')?.textContent,
-        contractNo, signedAt: now.toISOString(), signature: signatureData, idImage: uploadedFile
-    });
+
+    // Call the correct function name
+    if (typeof showAlreadySignedSimplified === 'function') {
+        const studentName = document.getElementById('contractStudentName')?.textContent || 'Student';
+        showAlreadySignedSimplified({
+            studentName,
+            contractNo,
+            signedAt: now.toISOString(),
+            signature: signatureData,
+            idImage: uploadedFile,
+            contractType: currentStudent?.contractType || 'text',
+            contract: currentStudent?.contract || null
+        });
+
+        // Setup download button immediately
+        setTimeout(() => {
+            setupPdfDownload(studentName, contractNo);
+        }, 500);
+    } else {
+        console.error("Success function not found!");
+        alert("تم توقيع العقد بنجاح! (" + contractNo + ")");
+        location.reload();
+    }
 });
 
 document.getElementById('zoomContract')?.addEventListener('click', function () {
@@ -1073,7 +1117,7 @@ async function generatePdfFromTemplate(template, studentData) {
         else if (text === '{الهوية}') { text = studentData.idImage || null; isImage = true; }
         else if (text === '{الختم}') {
             const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-            text = settings.stampImage || null;
+            text = window.SCHOOL_STAMP_IMAGE || settings.stampImage || null;
             isImage = true;
         } else {
             // Custom Fields
