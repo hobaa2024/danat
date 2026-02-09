@@ -1207,7 +1207,11 @@ const UI = {
                 : template.content;
         }
 
-        const stampHtml = `<div style="width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:0 auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
+        const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
+
+        const stampHtml = stampImage
+            ? `<div style="text-align:center; position:relative; z-index:5;"><img src="${stampImage}" style="height:110px; width:auto; max-width:150px; opacity:0.85; transform:rotate(-2deg);"></div>`
+            : `<div style="width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:0 auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
 
         const idCardSection = hasIdImage ? `<img src="${student.idImage}" style="max-height:180px; max-width:90%; border:1px solid #ddd; padding:2px; border-radius:4px;">` : '';
 
@@ -1322,6 +1326,81 @@ const UI = {
         } catch (err) {
             console.error("Preview Error:", err);
             alert("حدث خطأ أثناء معاينة العقد: " + err.message);
+        }
+    },
+
+    async downloadContractPdf(id) {
+        try {
+            const students = db.getStudents();
+            const student = students.find(s => s.id === id);
+            if (!student) throw new Error("الطالب غير موجود");
+
+            if (typeof UI.showNotification === 'function') UI.showNotification('جاري تحميل العقد...');
+
+            const templateId = student.contractTemplateId;
+            let template = (typeof contractMgr !== 'undefined')
+                ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
+                : null;
+
+            if (!template) {
+                const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
+            }
+
+            if (!template) throw new Error("قالب العقد غير موجود");
+
+            // Check for PDF Template
+            const isPdfTemplate = (template && template.type === 'pdf_template') ||
+                (template && template.content && template.content.startsWith('قالب PDF:')) ||
+                (student.contractType === 'pdf_template');
+
+            if (isPdfTemplate) {
+                const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+                // Create link and download
+                const link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                const dateStr = new Date().toISOString().split('T')[0];
+                link.download = `عقد-${student.studentName}-${dateStr}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                // HTML Contract Download (Using html2pdf)
+                const container = document.createElement('div');
+                container.style.position = 'absolute';
+                container.style.left = '-9999px';
+                container.style.width = '210mm'; // A4 width
+                container.style.background = 'white';
+                container.innerHTML = this.getContractSummaryHTML(student);
+                document.body.appendChild(container);
+
+                // Use html2pdf
+                if (typeof html2pdf === 'undefined') {
+                    // Fallback to print
+                    document.body.removeChild(container);
+                    this.previewContract(id);
+                    return;
+                }
+
+                const opt = {
+                    margin: 10,
+                    filename: `عقد-${student.studentName}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+                };
+
+                await html2pdf().from(container).set(opt).save();
+                document.body.removeChild(container);
+            }
+
+            if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
+
+        } catch (err) {
+            console.error("Download Error:", err);
+            alert("حدث خطأ أثناء تحميل العقد: " + err.message);
         }
     },
 
@@ -1478,12 +1557,18 @@ ${link}
 
         const logo = document.getElementById('settingsLogoPreview')?.src || '';
 
+        // Stamp Image
+        const stampPreviewImg = document.querySelector('.school-stamp img');
+        const stampImage = stampPreviewImg ? stampPreviewImg.src : '';
+
         // Security
         const adminUser = document.getElementById('adminUsernameSetting')?.value;
         const adminPass = document.getElementById('adminPassSetting')?.value;
 
+        const currentSettings = db.getSettings();
+
         const settings = {
-            ...db.getSettings(), // Keep existing keys
+            ...currentSettings, // Keep existing keys
             schoolName,
             schoolStampText: stampText,
             schoolPhone,
@@ -1491,7 +1576,8 @@ ${link}
             levels,
             grades,
             customFields,
-            schoolLogo: logo.startsWith('data:') ? logo : (db.getSettings().schoolLogo || ''),
+            schoolLogo: logo.startsWith('data:') ? logo : (currentSettings.schoolLogo || ''),
+            stampImage: stampImage.startsWith('data:') ? stampImage : (currentSettings.stampImage || ''),
             nationalContractId: document.getElementById('nationalContractSetting')?.value || null,
             diplomaContractId: document.getElementById('diplomaContractSetting')?.value || null
         };
@@ -1502,10 +1588,59 @@ ${link}
         db.saveSettings(settings);
         this.applyBranding();
         this.populateDynamicSelects();
+
+        // Sync to cloud if possible
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            CloudDB.saveSettings(settings);
+        }
+
         this.showNotification('✅ تم حفظ جميع الإعدادات بنجاح');
 
         // Clear password field for security
         if (document.getElementById('adminPassSetting')) document.getElementById('adminPassSetting').value = '';
+    },
+
+    handleLogoUpload(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const img = document.getElementById('settingsLogoPreview');
+                if (img) img.src = e.target.result;
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    },
+
+    handleStampUpload(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const previewContainer = document.querySelector('.school-stamp');
+                if (previewContainer) {
+                    previewContainer.innerHTML = `<img src="${e.target.result}" style="width:100%; height:100%; object-fit:contain; border-radius:50%; position:absolute; top:0; left:0; z-index:10;">`;
+                }
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    },
+
+    updateStampPreview() {
+        const text = document.getElementById('schoolStampInput').value;
+        const previewContainer = document.querySelector('.school-stamp');
+
+        // If image exists, don't revert to text unless user clears image (which needs a reload or clear button)
+        // For now, simpler is better: if there is an IMG tag, keep it. If not, update text.
+        if (previewContainer && !previewContainer.querySelector('img')) {
+            const previewText = document.getElementById('stampPreviewText'); // This ID existed in original HTML
+            if (previewText) previewText.textContent = text || 'الإدارة';
+            else {
+                // Re-create text structure if lost
+                previewContainer.innerHTML = `
+                    <div style="position: absolute; width: 90%; height: 90%; border: 1px solid var(--primary-main); border-radius: 50%;"></div>
+                    <div id="stampPreviewText" style="font-size: 1rem; text-align: center; max-width: 80%; line-height: 1.2;">${text || 'الإدارة'}</div>
+                 `;
+            }
+        }
     },
 
     // --- New Settings UI Functions ---
@@ -1706,6 +1841,14 @@ ${link}
             // Logo
             if (document.getElementById('settingsLogoPreview') && settings.schoolLogo) {
                 document.getElementById('settingsLogoPreview').src = settings.schoolLogo;
+            }
+
+            // Stamp Image
+            if (settings.stampImage) {
+                const previewContainer = document.querySelector('.school-stamp');
+                if (previewContainer) {
+                    previewContainer.innerHTML = `<img src="${settings.stampImage}" style="width:100%; height:100%; object-fit:contain; border-radius:50%; position:absolute; top:0; left:0; z-index:10;">`;
+                }
             }
 
             // Chips & Lists
