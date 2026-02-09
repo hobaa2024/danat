@@ -201,7 +201,17 @@ async function loadStudentData() {
                     id: data.i, studentName: data.s, studentLevel: data.l, studentGrade: data.g,
                     parentName: data.p, parentEmail: data.e, parentWhatsapp: data.w, contractYear: data.y,
                     contractTemplateId: data.tid || '',
-                    contractStatus: 'pending' // Default to pending for URL loaded students
+                    contractStatus: 'pending', // Default to pending for URL loaded students
+                    nationalId: data.nid || '',
+                    parentNationalId: data.pnid || '',
+                    address: data.adr || '',
+                    nationality: data.nat || '',
+                    customFields: {
+                        nationalId: data.nid || '',
+                        parentNationalId: data.pnid || '',
+                        address: data.adr || '',
+                        nationality: data.nat || ''
+                    }
                 };
                 studentIdToSave = data.i;
                 if (data.t && data.c) contract = { title: data.t, content: data.c };
@@ -1078,19 +1088,15 @@ async function generatePdfFromTemplate(template, studentData) {
         try {
             let str = String(text).trim();
             // 1. Reshape
-            if (typeof ArabicReshaper !== 'undefined') {
-                str = ArabicReshaper.reshape(str);
-            }
-            // 2. Reverse for PDF-Lib compatibility
+            if (typeof ArabicReshaper !== 'undefined') str = ArabicReshaper.reshape(str);
+
+            // 2. Smart Reverse (Reverse only if Arabic is present)
             const hasArabic = /[\u0600-\u06FF]/.test(str);
             if (hasArabic) {
                 return str.split('').reverse().join('');
             }
             return str;
-        } catch (e) {
-            console.warn("Arabic fixing failed:", e);
-            return String(text);
-        }
+        } catch (e) { return String(text); }
     };
 
     for (const field of template.pdfFields) {

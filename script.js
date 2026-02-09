@@ -910,7 +910,12 @@ const UI = {
             e: student.parentEmail,
             w: student.parentWhatsapp,
             y: student.contractYear || new Date().getFullYear().toString(),
-            tid: student.contractTemplateId || ''
+            tid: student.contractTemplateId || '',
+            // Added new fields
+            nid: student.customFields?.nationalId || student.nationalId || '',
+            pnid: student.customFields?.parentNationalId || '',
+            adr: student.address || student.customFields?.address || '',
+            nat: student.nationality || student.customFields?.nationality || ''
         };
 
         // If it's a text contract, include content

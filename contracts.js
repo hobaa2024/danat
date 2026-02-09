@@ -262,16 +262,18 @@ class ContractManager {
     }
 
     // Generate Final PDF from Template
+    // Generate Final PDF from Template
     async generatePdfFromTemplate(contractTemplate, studentData) {
+        if (!studentData) {
+            console.warn("⚠️ No student data provided for PDF generation");
+            return null;
+        }
+
         // Load heavy data if missing
         if (!contractTemplate.pdfData && contractTemplate.hasLargePdf) {
-            console.log("📥 Loading PDF Template from IndexedDB...");
             const data = await this.getPdfFromDB(contractTemplate.id);
-            if (data) {
-                contractTemplate.pdfData = data;
-            } else {
-                throw new Error("تعذر تحميل ملف PDF من قاعدة البيانات المحلية. يرجى إعادة رفع القالب.");
-            }
+            if (data) contractTemplate.pdfData = data;
+            else throw new Error("تعذر تحميل ملف PDF من قاعدة البيانات المحلية.");
         }
 
         if (!contractTemplate.pdfData || !contractTemplate.pdfFields) {
@@ -280,25 +282,16 @@ class ContractManager {
 
         // Ensure ArabicReshaper is loaded
         if (typeof ArabicReshaper === 'undefined') {
-            try {
-                await new Promise((resolve) => {
-                    const s = document.createElement('script');
-                    s.src = 'https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
-                    s.onload = resolve;
-                    s.onerror = resolve;
-                    document.head.appendChild(s);
-                });
-            } catch (e) {
-                try {
-                    await new Promise((resolve) => { const s = document.createElement('script'); s.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.js'; s.onload = resolve; s.onerror = resolve; document.head.appendChild(s); });
-                } catch (e2) { }
-            }
+            await new Promise((r) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                s.onload = r; s.onerror = r; document.head.appendChild(s);
+            });
         }
 
         const { PDFDocument, rgb } = PDFLib;
         const fontkit = window.fontkit;
 
-        // 2. Load the template
         let pdfBytes;
         if (typeof contractTemplate.pdfData === 'string' && contractTemplate.pdfData.startsWith('data:application/pdf;base64,')) {
             const base64 = contractTemplate.pdfData.split(',')[1];
@@ -308,151 +301,72 @@ class ContractManager {
         }
 
         const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+        if (fontkit) pdfDoc.registerFontkit(fontkit);
 
-        // Register Fontkit (Mandatory for custom TTF embedding in pdf-lib)
-        const fk = window.fontkit || (typeof fontkit !== 'undefined' ? fontkit : null);
-        if (fk) {
-            pdfDoc.registerFontkit(fk);
-        } else {
-            console.error("Critical: Fontkit library not found!");
-            throw new Error("مكتبة Fontkit غير متوفرة. يرجى التأكد من استقرار الإنترنت وتحديث الصفحة.");
-        }
-
-        // 1. Get Font (Cached) - Hyper-Resilient loading (using Amiri font - more reliable)
-        if (!this.cachedFont || this.cachedFont.byteLength < 100000) {
-            this.cachedFont = null;
-            const fontSources = [
-                { id: 'Local', url: 'Amiri-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' },
-                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf' },
-                { id: 'Fontsource', url: 'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff' }
-            ];
-
-            let log = [];
-            for (const src of fontSources) {
-                try {
-                    const resp = await fetch(src.url, { mode: 'cors' });
-                    if (resp.ok) {
-                        const buf = await resp.arrayBuffer();
-                        if (buf.byteLength > 100000) {
-                            this.cachedFont = buf;
-                            console.log(`✅ Font loaded from ${src.id}`);
-
-                            // AUTO-SYNC TO CLOUD: Save verified font to Firebase for parents
-                            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-                                try {
-                                    const bytes = new Uint8Array(buf);
-                                    let binary = '';
-                                    for (let i = 0; i < bytes.byteLength; i++) {
-                                        binary += String.fromCharCode(bytes[i]);
-                                    }
-                                    const base64Font = btoa(binary);
-                                    CloudDB.saveFont('Amiri-Regular', base64Font);
-                                } catch (e) { console.warn("Font sync failed", e); }
-                            }
-                            break;
-                        } else {
-                            log.push(`${src.id}: Size missing (${buf.byteLength})`);
-                        }
-                    } else {
-                        log.push(`${src.id}: HTTP ${resp.status}`);
-                    }
-                } catch (e) {
-                    log.push(`${src.id}: Error (${e.message})`);
-                }
-            }
-
-            // STRATEGY C: Try Embedded Font (font-data.js) - Ultimate Backup
+        // Load/Embed Font
+        if (!this.cachedFont || this.cachedFont.byteLength < 50000) {
+            // Re-fetch font strategy (Amiri)
+            try {
+                const res = await fetch('Amiri-Regular.ttf');
+                if (res.ok) this.cachedFont = await res.arrayBuffer();
+            } catch (e) { }
+            // Final fallback to embedded
             if (!this.cachedFont && typeof GLOBAL_CAIRO_FONT !== 'undefined') {
-                try {
-                    console.log("💎 Loading Font from Embedded Backup...");
-                    const binary = atob(GLOBAL_CAIRO_FONT);
-                    const bytes = new Uint8Array(binary.length);
-                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    if (bytes.byteLength > 100000) { // Cairo usually > 100KB base64
-                        this.cachedFont = bytes.buffer;
-                        console.log("✅ Font loaded from Embedded Backup");
-                    } else {
-                        log.push("Embedded: Invalid size");
-                    }
-                } catch (e) { log.push(`Embedded: Error (${e.message})`); }
-            }
-
-            if (!this.cachedFont) {
-                const errorDetails = log.join(' | ');
-                throw new Error(`تعذر تحميل خطوط العقد بسبب قيود في الشبكة أو ضعف الاتصال. (التشخيص: ${errorDetails})`);
+                const b = atob(GLOBAL_CAIRO_FONT);
+                const bytes = new Uint8Array(b.length);
+                for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
+                this.cachedFont = bytes.buffer;
             }
         }
 
         let customFont = null;
         try {
-            if (this.cachedFont && this.cachedFont.byteLength > 50000) {
-                customFont = await pdfDoc.embedFont(this.cachedFont);
-                console.log("✅ Custom Arabic font embedded successfully");
-            } else {
-                throw new Error("Font not cached");
-            }
+            if (this.cachedFont) customFont = await pdfDoc.embedFont(this.cachedFont);
+            else throw new Error();
         } catch (e) {
-            console.warn("Arabic font embedding failed, using fallback Helvetica:", e.message);
-            // Fallback to Helvetica (built-in, always works)
             const { StandardFonts } = PDFLib;
             customFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
         }
 
         const pages = pdfDoc.getPages();
 
-        // Advanced Arabic text handler (Reshaper + Bidi Joining)
-        // Advanced Arabic text handler (Reshaper + Reversal for PDF compatibility)
-        // Advanced Arabic text handler (Reshaper + Conditional Reversal)
+        // Advanced Arabic Fixer (Mixed Text Aware)
         const fixArabic = (text) => {
             if (!text) return "";
             try {
                 let str = String(text).trim();
+                // 1. Reshape
+                if (typeof ArabicReshaper !== 'undefined') str = ArabicReshaper.reshape(str);
 
-                // 1. Reshape Arabic Characters (Join them)
-                if (typeof ArabicReshaper !== 'undefined') {
-                    str = ArabicReshaper.reshape(str);
-                }
-
-                // Note: For some PDF readers and pdf-lib with specific fonts, 
-                // we only need reshaping. Let's try WITHOUT total reversal first 
-                // or use a smarter bidi check.
+                // 2. Smart Reverse (Reverse only if Arabic is present)
                 const hasArabic = /[\u0600-\u06FF]/.test(str);
                 if (hasArabic) {
-                    // Try to avoid double reversing if the font/reshaper already handled it
-                    // But usually pdf-lib still needs it.
+                    // Split by words, reverse Arabic ones? No, standard is rev whole for pdf-lib
+                    // But we must handle punctuation and numbers if possible
                     return str.split('').reverse().join('');
                 }
                 return str;
-            } catch (e) {
-                console.warn("Arabic fixing failed:", e);
-                console.warn("Arabic fixing failed:", e);
-                return String(text);
-            }
+            } catch (e) { return String(text); }
         };
 
-        // Process Fields
+        const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+
         for (const field of contractTemplate.pdfFields) {
             let text = field.variable;
             let isImage = false;
-
-            // Simple cleaning for variable matching (remove spaces and underscores to be flexible)
-            const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
             const target = cleanVar(text);
 
-            // Replace variables (Unified keys - Smart Matching)
             if (target === 'اسمالطالب') text = studentData.studentName || '';
             else if (target === 'اسموليالامر') text = studentData.parentName || '';
             else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
             else if (target === 'الصف') text = studentData.studentGrade || '';
             else if (target === 'المرحلة' || target === 'المرحلةالدراسية') text = studentData.studentLevel || '';
             else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || '';
-            else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
-            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمالهوية')
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'رقمالهوية')
                 text = studentData.customFields?.nationalId || studentData.nationalId || '';
-            else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر')
+            else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر')
                 text = studentData.customFields?.parentNationalId || '';
-            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب' || target === 'رقمجوال')
+            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'جوال')
                 text = studentData.parentWhatsapp || '';
             else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
             else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
@@ -461,13 +375,11 @@ class ContractManager {
                 const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
                 text = days[new Date().getDay()];
             }
-            else if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
-                text = studentData.signature;
-                isImage = true;
+            else if (target === 'التوقيع' || target === 'مكانالتوقيع') {
+                text = studentData.signature; isImage = true;
             }
             else if (target === 'الهوية' || target === 'مكانالهوية') {
-                text = studentData.idImage || studentData.idCardImage || null;
-                isImage = true;
+                text = studentData.idImage || studentData.idCardImage || null; isImage = true;
             }
             else if (target === 'الختم' || target === 'مكانالختم') {
                 try {
@@ -476,109 +388,60 @@ class ContractManager {
                 } catch (e) { }
                 isImage = true;
             } else {
-                // Check Custom Fields directly by label (Smart Matching)
+                // Custom Fields
                 if (studentData.customFields) {
                     try {
                         const settings = (typeof db !== 'undefined') ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
                         const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
-                        if (fieldDef) {
-                            text = studentData.customFields[fieldDef.id] || '';
-                        }
+                        if (fieldDef) text = studentData.customFields[fieldDef.id] || '';
                     } catch (e) { }
                 }
             }
 
             if (!text) continue;
-
             const page = pages[field.page - 1];
             if (!page) continue;
 
             const { width: pWidth, height: pHeight } = page.getSize();
-
-            // Calculate scaling between the viewport used in editor and the actual PDF page size
-            // Viewport size was saved in 'field.viewportWidth' and 'field.viewportHeight'
             const scaleX = pWidth / field.viewportWidth;
             const scaleY = pHeight / field.viewportHeight;
-
             const pdfX = field.x * scaleX;
-            // PDF coordinates start from bottom-left
             const pdfY = pHeight - (field.y * scaleY);
 
             if (isImage) {
                 try {
                     let image;
-                    // Robust Image Embedding Support
                     let base64Data = text;
-                    let isPng = true; // Default assumption if unknown
-
+                    let isPng = true;
                     if (text.includes(',')) {
                         const parts = text.split(',');
                         if (parts[0].includes('jpeg') || parts[0].includes('jpg')) isPng = false;
                         base64Data = parts[1];
                     }
 
-                    // Try detecting format from magic numbers if possible, or just try-catch
                     try {
-                        if (isPng) image = await pdfDoc.embedPng(base64Data);
-                        else image = await pdfDoc.embedJpg(base64Data);
+                        image = isPng ? await pdfDoc.embedPng(base64Data) : await pdfDoc.embedJpg(base64Data);
                     } catch (e1) {
-                        // Fallback: swap format
-                        try {
-                            if (isPng) image = await pdfDoc.embedJpg(base64Data);
-                            else image = await pdfDoc.embedPng(base64Data);
-                        } catch (e2) {
-                            console.error("Failed to embed image in either format", e2);
-                        }
+                        image = isPng ? await pdfDoc.embedJpg(base64Data) : await pdfDoc.embedPng(base64Data);
                     }
 
                     if (image) {
-                        // Precise sizes for different image types
                         let fitW = 120, fitH = 60;
-                        if (field.variable.includes('الختم')) { fitW = 85; fitH = 85; }
-                        else if (field.variable.includes('الهوية')) { fitW = 180; fitH = 120; }
+                        if (target.includes('ختم')) { fitW = 90; fitH = 90; }
+                        else if (target.includes('هوية')) { fitW = 200; fitH = 140; }
 
                         const imgDims = image.scaleToFit(fitW, fitH);
-                        // Vertical adjustment to center image better in the designated area
-                        const yAdjustment = field.variable.includes('الختم') ? imgDims.height / 1.5 : imgDims.height;
+                        const yAdj = target.includes('ختم') ? imgDims.height / 1.5 : imgDims.height;
 
-                        page.drawImage(image, {
-                            x: pdfX,
-                            y: pdfY - yAdjustment,
-                            width: imgDims.width,
-                            height: imgDims.height,
-                        });
-                        console.log(`✅ Image embedded: ${field.variable}`);
+                        page.drawImage(image, { x: pdfX, y: pdfY - yAdj, width: imgDims.width, height: imgDims.height });
                     }
-                } catch (err) {
-                    console.error("Error processing/embedding image:", err);
-                }
+                } catch (err) { console.error("Img Embedding Fail:", target, err); }
             } else {
-                // Draw Text with fixed Arabic
                 try {
-                    page.drawText(fixArabic(text), {
-                        x: pdfX,
-                        y: pdfY - 14, // Roughly adjust for font height
-                        size: 11,
-                        font: customFont,
-                        color: rgb(0, 0, 0)
-                    });
-                } catch (err) {
-                    console.warn("PDF Draw Error (Encoding):", err);
-                    // Fallback: Draw sanitized text to prevent crash
-                    const safeText = String(text).replace(/[^\x00-\x7F]/g, "?");
-                    try {
-                        page.drawText(safeText, {
-                            x: pdfX,
-                            y: pdfY - 14,
-                            size: 11,
-                            font: customFont,
-                            color: rgb(0, 0, 0)
-                        });
-                    } catch (e) { }
-                }
+                    page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 14, size: 11, font: customFont, color: rgb(0, 0, 0) });
+                } catch (err) { console.warn("Text Draw Fail:", text, err); }
             }
         }
-
         return await pdfDoc.save();
     }
 }
