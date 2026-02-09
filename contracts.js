@@ -13,7 +13,11 @@ class ContractManager {
             { key: '{الرقم_القومي}', label: 'السجل المدني/الإقامة' },
             { key: '{رقم_الواتساب}', label: 'رقم الواتساب' },
             { key: '{التاريخ}', label: 'التاريخ الحالي' },
-            { key: '{التوقيع}', label: 'توقيع ولي الأمر' },
+            { key: '{اليوم}', label: 'اليوم الحالي (اسم)' },
+            { key: '{هوية_الطالب}', label: 'رقم هوية الطالب' },
+            { key: '{هوية_ولي_الأمر}', label: 'رقم هوية ولي الأمر' },
+            { key: '{جوال_ولي_الأمر}', label: 'رقم جوال ولي الأمر' },
+            { key: '{توقيع}', label: 'توقيع ولي الأمر' },
             { key: '{الختم}', label: 'ختم المدرسة' },
             { key: '{الهوية}', label: 'صورة الهوية' }
         ];
@@ -108,11 +112,19 @@ class ContractManager {
         result = result.replace(/{اسم_ولي_الامر}/g, studentData.parentName || '');
         result = result.replace(/{المسار}/g, studentData.customFields?.studentTrack || studentData.studentTrack || '');
         result = result.replace(/{الصف}/g, studentData.studentGrade || '');
-        result = result.replace(/{السنة_الدراسية}/g, studentData.contractYear || '');
+        result = result.replace(/{المرحلة}/g, studentData.studentLevel || '');
+        result = result.replace(/{السنة_الدراسية}/g, studentData.customFields?.contractYear || '');
         result = result.replace(/{البريد_الالكتروني}/g, studentData.parentEmail || '');
-        result = result.replace(/{الرقم_القومي}/g, studentData.nationalId || '');
-        result = result.replace(/{رقم_الواتساب}/g, studentData.parentWhatsapp || '');
-        result = result.replace(/{التاريخ}/g, new Date().toLocaleDateString('ar-SA'));
+
+        // New Variables requested by user
+        result = result.replace(/{هوية_الطالب}/g, studentData.customFields?.nationalId || studentData.nationalId || '');
+        result = result.replace(/{هوية_ولي_الأمر}/g, studentData.customFields?.parentNationalId || '');
+        result = result.replace(/{جوال_ولي_الأمر}/g, studentData.parentWhatsapp || '');
+
+        const now = new Date();
+        const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+        result = result.replace(/{اليوم}/g, days[now.getDay()]);
+        result = result.replace(/{التاريخ}/g, now.toLocaleDateString('ar-SA'));
 
         // Image Variables (HTML Rendering)
         // Signature
@@ -387,10 +399,26 @@ class ContractManager {
 
         const pages = pdfDoc.getPages();
 
-        // Simple Arabic text handler - NO REVERSAL (font handles RTL)
+        // Advanced Arabic text handler (Reshaper + Bidi Joining)
         const fixArabic = (text) => {
             if (!text) return "";
-            return String(text);
+            try {
+                // Ensure text is string and trim
+                let processedText = String(text).trim();
+
+                // 1. Reshape Arabic Characters (Join them)
+                if (typeof ArabicReshaper !== 'undefined') {
+                    processedText = ArabicReshaper.reshape(processedText);
+                }
+
+                // 2. We don't need to reverse if the font is embedded correctly with fontkit 
+                // and we're using a single line drawing. But some PDF readers need reversal.
+                // Let's keep it simple for now, the Reshaper handles the glyph joining.
+                return processedText;
+            } catch (e) {
+                console.warn("Arabic fixing failed:", e);
+                return String(text);
+            }
         };
 
         // Process Fields
@@ -398,26 +426,31 @@ class ContractManager {
             let text = field.variable;
             let isImage = false;
 
-            // Replace variables
+            // Replace variables (Unified keys)
             if (text === '{اسم_الطالب}') text = studentData.studentName || '';
             else if (text === '{اسم_ولي_الامر}') text = studentData.parentName || '';
             else if (text === '{المسار}') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
             else if (text === '{الصف}') text = studentData.studentGrade || '';
-            else if (text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
-            else if (text === '{السنة_الدراسية}') text = studentData.contractYear || '';
+            else if (text === '{المرحلة}' || text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
+            else if (text === '{السنة_الدراسية}') text = studentData.customFields?.contractYear || '';
             else if (text === '{البريد_الالكتروني}') text = studentData.parentEmail || '';
-            else if (text === '{الرقم_القومي}') text = studentData.nationalId || '';
-            else if (text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
+            else if (text === '{هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
+            else if (text === '{هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
+            else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
             else if (text === '{التاريخ}') text = new Date().toLocaleDateString('ar-SA');
-            else if (text === '{التوقيع}') {
+            else if (text === '{اليوم}') {
+                const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+                text = days[new Date().getDay()];
+            }
+            else if (text === '{التوقيع}' || text === '{توقيع}') {
                 text = studentData.signature;
                 isImage = true;
-                if (!text) console.warn("⚠️ Signature data missing for student:", studentData.studentName);
+                if (!text) console.warn("⚠️ Signature missing");
             }
             else if (text === '{الهوية}') {
                 text = studentData.idImage || studentData.idCardImage || null;
                 isImage = true;
-                if (!text) console.warn("⚠️ ID Image missing for student:", studentData.studentName);
+                if (!text) console.warn("⚠️ ID Image missing");
             }
             else if (text === '{الختم}') {
                 // Try to get settings from DB or LocalStorage

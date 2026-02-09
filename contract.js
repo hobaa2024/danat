@@ -1072,52 +1072,53 @@ async function generatePdfFromTemplate(template, studentData) {
 
     const pages = pdfDoc.getPages();
 
-    // Simple Arabic text handler - NO REVERSAL (font handles RTL) V4.0
+    // Advanced Arabic text handler (Reshaper V4.2)
     const fixArabic = (text) => {
         if (!text) return "";
-        if (!window.fixArabicLogged) {
-            console.log("✅ Using V4.0 Arabic Fix - No Reversal");
-            window.fixArabicLogged = true;
-
-            // Show version info on page (visual confirmation)
-            try {
-                const footer = document.querySelector('.steps-container') || document.body;
-                let vSpan = document.getElementById('appVersion');
-                if (!vSpan) {
-                    vSpan = document.createElement('div');
-                    vSpan.id = 'appVersion';
-                    vSpan.style.textAlign = 'center';
-                    vSpan.style.fontSize = '12px';
-                    vSpan.style.color = '#888';
-                    vSpan.style.marginTop = '10px';
-                    vSpan.textContent = 'Engineering Update: v4.1 (No Reversal)';
-                    footer.appendChild(vSpan);
-                }
-            } catch (e) { }
+        try {
+            let processedText = String(text).trim();
+            // 1. Reshape Arabic Characters (Join them)
+            if (typeof ArabicReshaper !== 'undefined') {
+                processedText = ArabicReshaper.reshape(processedText);
+            }
+            return processedText;
+        } catch (e) {
+            console.warn("Arabic fixing failed:", e);
+            return String(text);
         }
-        return String(text);
     };
 
     for (const field of template.pdfFields) {
         let text = field.variable;
         let isImage = false;
 
-        // Basic Replacements
+        // Unified Variable Mapping (Admin + Parent Consistent)
         if (text === '{اسم_الطالب}') text = studentData.studentName || '';
         else if (text === '{اسم_ولي_الامر}') text = studentData.parentName || '';
         else if (text === '{المسار}') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
         else if (text === '{الصف}') text = studentData.studentGrade || '';
-        else if (text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
-        else if (text === '{السنة_الدراسية}') text = studentData.contractYear || '';
+        else if (text === '{المرحلة}' || text === '{المرحلة_الدراسية}') text = studentData.studentLevel || '';
+        else if (text === '{السنة_الدراسية}') text = studentData.customFields?.contractYear || '';
         else if (text === '{البريد_الالكتروني}') text = studentData.parentEmail || '';
-        else if (text === '{الرقم_القومي}') text = studentData.nationalId || studentData.customFields?.nationalId || '';
-        else if (text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
-        else if (text === '{التاريخ}') text = new Date().toLocaleDateString('en-US'); // Use Western numerals for safety
-        else if (text === '{التوقيع}') { text = studentData.signature; isImage = true; }
-        else if (text === '{الهوية}') { text = studentData.idImage || null; isImage = true; }
+        else if (text === '{هوية_الطالب}' || text === '{الرقم_القومي}') text = studentData.customFields?.nationalId || studentData.nationalId || '';
+        else if (text === '{هوية_ولي_الأمر}') text = studentData.customFields?.parentNationalId || '';
+        else if (text === '{جوال_ولي_الأمر}' || text === '{رقم_الواتساب}') text = studentData.parentWhatsapp || '';
+        else if (text === '{التاريخ}') text = new Date().toLocaleDateString('ar-SA');
+        else if (text === '{اليوم}') {
+            const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+            text = days[new Date().getDay()];
+        }
+        else if (text === '{التوقيع}' || text === '{توقيع}') {
+            text = studentData.signature || signatureData;
+            isImage = true;
+        }
+        else if (text === '{الهوية}') {
+            text = uploadedFile || studentData.idImage || null;
+            isImage = true;
+        }
         else if (text === '{الختم}') {
             const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-            text = window.SCHOOL_STAMP_IMAGE || settings.stampImage || null;
+            text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
             isImage = true;
         } else {
             // Custom Fields

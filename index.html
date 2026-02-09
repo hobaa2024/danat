@@ -1349,11 +1349,11 @@
                                         هذا
                                         الجهاز فقط.</p>
                                 </div>
-                                <button class="btn btn-danger" onclick="DB.clearAllData()">مسح كافة البيانات</button>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
     </main>
 
     <!-- New Student Modal -->
@@ -1371,7 +1371,7 @@
                     </div>
                     <div class="form-group">
                         <label for="studentTrack">المسار التعليمي</label>
-                        <select id="studentTrack">
+                        <select id="studentTrack" onchange="UI.autoSelectContract()">
                             <option value="">اختر المسار</option>
                             <option value="مسار ثنائي اللغة">مسار ثنائي اللغة</option>
                             <option value="مسار دبلوما أمريكية">مسار دبلوما أمريكية</option>

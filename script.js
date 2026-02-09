@@ -410,8 +410,14 @@ const UI = {
         if (!trackSelect || !contractSelect) return;
 
         const selectedTrack = trackSelect.value;
-        const settings = db.getSettings();
+        if (!selectedTrack) return;
 
+        // Ensure contracts are populated in the dropdown before selecting
+        if (contractSelect.options.length <= 1) {
+            this.populateContractTemplates();
+        }
+
+        const settings = db.getSettings();
         let contractToSelect = '';
 
         // Enhanced matching logic (Regex)
@@ -421,18 +427,25 @@ const UI = {
             contractToSelect = settings.nationalContractId;
         }
 
-        if (selectedTrack && !contractToSelect) {
-            // Only warn if track is selected but no contract mapped
-            console.warn('No contract mapped for track:', selectedTrack);
-            UI.showNotification(`⚠️ تنبيه: لم يتم تحديد عقد افتراضي لهذا المسار (${selectedTrack}) في الإعدادات.`);
-        } else if (contractToSelect) {
-            // Check if contract exists in dropdown
-            const option = contractSelect.querySelector(`option[value="${contractToSelect}"]`);
-            if (option) {
+        if (!contractToSelect) {
+            console.warn('No contract ID mapped in settings for:', selectedTrack);
+            UI.showNotification(`⚠️ تنبيه: لم يتم ربط عقد افتراضي لهذا المسار في الإعدادات.`);
+            return;
+        }
+
+        // Try to select
+        const option = contractSelect.querySelector(`option[value="${contractToSelect}"]`);
+        if (option) {
+            contractSelect.value = contractToSelect;
+            UI.showNotification(`✅ تم اختيار العقد الافتراضي للمسار: ${option.text}`);
+        } else {
+            // Fallback: Re-populate and try once more if not found
+            this.populateContractTemplates();
+            const retryOption = contractSelect.querySelector(`option[value="${contractToSelect}"]`);
+            if (retryOption) {
                 contractSelect.value = contractToSelect;
-                UI.showNotification(`✅ تم اختيار العقد التلقائي: ${option.text}`);
             } else {
-                UI.showNotification(`⚠️ خطأ: العقد المربوط (ID: ${contractToSelect}) غير موجود في القائمة.`);
+                UI.showNotification(`⚠️ تنبيه: العقد المربوط بالمسار غير متوفر حالياً.`);
             }
         }
     },
@@ -1663,34 +1676,30 @@ ${link}
         const activeBtn = Array.from(buttons).find(btn => btn.getAttribute('onclick')?.includes(tabId));
         if (activeBtn) activeBtn.classList.add('active');
 
-        // Update Content
+        // Hide all contents
         const contents = document.querySelectorAll('.tab-content');
         contents.forEach(content => {
             content.classList.remove('active');
-            content.style.display = 'none';
+            content.style.setProperty('display', 'none', 'important');
         });
 
-        const content = document.getElementById(`tab-${tabId}`);
+        // Resolve Content ID
+        let content = document.getElementById(`tab-${tabId}`) || document.getElementById(tabId);
 
-        // Fallback: Try mapping common names if exact match fails
+        // Fallback: Try mapping common names 
         if (!content) {
             const map = {
                 'security': 'tab-account', 'account': 'tab-security',
                 'backup': 'tab-system', 'system': 'tab-backup'
             };
-            if (map[tabId]) {
-                const altContent = document.getElementById(map[tabId]);
-                if (altContent) {
-                    altContent.classList.add('active');
-                    altContent.style.display = 'block';
-                    return;
-                }
-            }
+            if (map[tabId]) content = document.getElementById(map[tabId]);
         }
 
         if (content) {
             content.classList.add('active');
-            content.style.display = 'block';
+            content.style.setProperty('display', 'block', 'important');
+        } else {
+            console.warn(`Tab content not found for ID: ${tabId}`);
         }
     },
 
