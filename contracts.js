@@ -403,6 +403,7 @@ class ContractManager {
 
         // Advanced Arabic text handler (Reshaper + Bidi Joining)
         // Advanced Arabic text handler (Reshaper + Reversal for PDF compatibility)
+        // Advanced Arabic text handler (Reshaper + Conditional Reversal)
         const fixArabic = (text) => {
             if (!text) return "";
             try {
@@ -413,9 +414,13 @@ class ContractManager {
                     str = ArabicReshaper.reshape(str);
                 }
 
-                // 2. Reverse for PDF-Lib (Standard Bidi Fix for Arabic)
+                // Note: For some PDF readers and pdf-lib with specific fonts, 
+                // we only need reshaping. Let's try WITHOUT total reversal first 
+                // or use a smarter bidi check.
                 const hasArabic = /[\u0600-\u06FF]/.test(str);
                 if (hasArabic) {
+                    // Try to avoid double reversing if the font/reshaper already handled it
+                    // But usually pdf-lib still needs it.
                     return str.split('').reverse().join('');
                 }
                 return str;
@@ -448,17 +453,17 @@ class ContractManager {
                 const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
                 text = days[new Date().getDay()];
             }
-            else if (text === '{التوقيع}' || text === '{توقيع}') {
+            else if (text === '{التوقيع}' || text === '{توقيع}' || text === '{مكان التوقيع}') {
                 text = studentData.signature;
                 isImage = true;
                 if (!text) console.warn("⚠️ Signature missing");
             }
-            else if (text === '{الهوية}') {
+            else if (text === '{الهوية}' || text === '{مكان الهوية}') {
                 text = studentData.idImage || studentData.idCardImage || null;
                 isImage = true;
                 if (!text) console.warn("⚠️ ID Image missing");
             }
-            else if (text === '{الختم}') {
+            else if (text === '{الختم}' || text === '{مكان الختم}') {
                 // Try to get settings from DB or LocalStorage
                 let settings = {};
                 try {
@@ -803,8 +808,14 @@ const ContractUI = {
             { key: '{المرحلة_الدراسية}', label: 'المرحلة' },
             { key: '{السنة_الدراسية}', label: 'السنة' },
             { key: '{التاريخ}', label: 'التاريخ' },
-            { key: '{التوقيع}', label: 'مكان التوقيع' },
-            { key: '{الختم}', label: 'مكان الختم' }
+            { key: '{رقم_هوية_الطالب}', label: 'رقم هوية الطالب' },
+            { key: '{رقم_هوية_ولي_الأمر}', label: 'رقم هوية ولي الأمر' },
+            { key: '{رقم_جوال_ولي_الأمر}', label: 'رقم جوال ولي الأمر' },
+            { key: '{العنوان}', label: 'العنوان' },
+            { key: '{الجنسية}', label: 'الجنسية' },
+            { key: '{توقيع}', label: 'مكان التوقيع' },
+            { key: '{الختم}', label: 'مكان الختم' },
+            { key: '{الهوية}', label: 'مكان الهوية' }
         ];
 
         let html = standard.map(v => `
@@ -982,7 +993,8 @@ const ContractUI = {
 
         manager.addedFields.forEach(field => {
             if (field.page === manager.pageNum) {
-                const isImage = field.variable === '{التوقيع}' || field.variable === '{الختم}';
+                const isImage = field.variable === '{توقيع}' || field.variable === '{التوقيع}' ||
+                    field.variable === '{الختم}' || field.variable === '{الهوية}';
                 const width = isImage ? 120 : 160;
                 const height = isImage ? 60 : 28;
 

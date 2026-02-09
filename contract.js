@@ -1115,15 +1115,16 @@ async function generatePdfFromTemplate(template, studentData) {
             const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
             text = days[new Date().getDay()];
         }
-        else if (text === '{التوقيع}' || text === '{توقيع}') {
+        else if (text === '{التوقيع}' || text === '{توقيع}' || text === '{مكان التوقيع}') {
             text = studentData.signature || signatureData;
             isImage = true;
         }
-        else if (text === '{الهوية}') {
-            text = uploadedFile || studentData.idImage || null;
+        else if (text === '{الهوية}' || text === '{مكان الهوية}') {
+            // Priority: Recently uploaded file > stored student data
+            text = uploadedFile || studentData.idImage || studentData.idCardImage || null;
             isImage = true;
         }
-        else if (text === '{الختم}') {
+        else if (text === '{الختم}' || text === '{مكان الختم}') {
             const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
             text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
             isImage = true;
@@ -1154,35 +1155,31 @@ async function generatePdfFromTemplate(template, studentData) {
         if (isImage) {
             try {
                 let img;
-                // Robust Image Embedding Support
                 let base64Data = text;
-                let isPng = true; // Default assumption
+                let isPng = true;
 
                 if (text.includes(',')) {
                     const parts = text.split(',');
-                    // Try to guess from MIME
                     if (parts[0].includes('jpeg') || parts[0].includes('jpg')) isPng = false;
                     base64Data = parts[1];
                 }
 
-                // Try detecting format or just try-catch
                 try {
                     if (isPng) img = await pdfDoc.embedPng(base64Data);
                     else img = await pdfDoc.embedJpg(base64Data);
                 } catch (e1) {
-                    // Fallback: swap format
                     try {
                         if (isPng) img = await pdfDoc.embedJpg(base64Data);
                         else img = await pdfDoc.embedPng(base64Data);
                     } catch (e2) {
-                        console.error("Failed to embed image in either format", e2);
+                        console.error("Failed to embed image", e2);
                     }
                 }
 
                 if (img) {
                     let fitW = 120, fitH = 60;
-                    if (field.variable.includes('الختم')) { fitW = 85; fitH = 85; }
-                    else if (field.variable.includes('الهوية')) { fitW = 180; fitH = 120; }
+                    if (field.variable.includes('الختم')) { fitW = 90; fitH = 90; }
+                    else if (field.variable.includes('الهوية')) { fitW = 200; fitH = 140; }
 
                     const dims = img.scaleToFit(fitW, fitH);
                     const yAdjustment = field.variable.includes('الختم') ? dims.height / 1.5 : dims.height;
@@ -1193,17 +1190,15 @@ async function generatePdfFromTemplate(template, studentData) {
                         width: dims.width,
                         height: dims.height
                     });
-                    console.log(`✅ Image embedded: ${field.variable}`);
                 }
             } catch (e) {
-                console.warn("Failed to embed image field:", field.variable, e);
+                console.warn("Image embedding failed:", field.variable, e);
             }
         } else {
             try {
-                page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 12, size: 10, font: customFont });
+                page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 14, size: 11, font: customFont });
             } catch (encodingError) {
-                console.error("Encoding error for text:", text, encodingError);
-                // Don't try to draw with standard font, just skip or log
+                console.error("Encoding error:", text, encodingError);
             }
         }
     }
