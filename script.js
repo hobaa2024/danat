@@ -414,22 +414,25 @@ const UI = {
 
         // Ensure contracts are populated in the dropdown before selecting
         if (contractSelect.options.length <= 1) {
-            this.populateContractTemplates();
+            this.populateDynamicSelects();
         }
 
         const settings = db.getSettings();
         let contractToSelect = '';
 
-        // Enhanced matching logic (Regex)
-        if (selectedTrack.match(/دبلوما|diploma/i)) {
+        // Resilient matching logic
+        const isDiploma = selectedTrack.includes('دبلوما') || selectedTrack.includes('دبلوم') || /diploma/i.test(selectedTrack);
+        const isNational = selectedTrack.includes('أهلي') || selectedTrack.includes('ثنائي') || selectedTrack.includes('عام') || /national|bilingual/i.test(selectedTrack);
+
+        if (isDiploma) {
             contractToSelect = settings.diplomaContractId;
-        } else if (selectedTrack.match(/ثنائي|أهلي|national|bilingual|عام/i)) {
+        } else if (isNational) {
             contractToSelect = settings.nationalContractId;
         }
 
         if (!contractToSelect) {
             console.warn('No contract ID mapped in settings for:', selectedTrack);
-            UI.showNotification(`⚠️ تنبيه: لم يتم ربط عقد افتراضي لهذا المسار في الإعدادات.`);
+            // Don't show an annoying alert every time, just a small notice or log
             return;
         }
 
@@ -437,7 +440,7 @@ const UI = {
         const option = contractSelect.querySelector(`option[value="${contractToSelect}"]`);
         if (option) {
             contractSelect.value = contractToSelect;
-            UI.showNotification(`✅ تم اختيار العقد الافتراضي للمسار: ${option.text}`);
+            this.showNotification(`✅ تم ربط العقد تلقائياً: ${option.text}`);
         } else {
             // Fallback: Re-populate and try once more if not found
             this.populateContractTemplates();
@@ -1597,7 +1600,7 @@ ${link}
         const diplomaEl = document.getElementById('diplomaContractSetting');
 
         const settings = {
-            ...currentSettings, // Keep existing keys
+            ...currentSettings,
             schoolName,
             schoolStampText: stampText,
             schoolPhone,
@@ -1607,9 +1610,8 @@ ${link}
             customFields,
             schoolLogo: logo.startsWith('data:') ? logo : (currentSettings.schoolLogo || ''),
             stampImage: stampImage.startsWith('data:') ? stampImage : (currentSettings.stampImage || ''),
-            // Only update if element exists, otherwise keep existing value
-            nationalContractId: nationalEl ? nationalEl.value : currentSettings.nationalContractId,
-            diplomaContractId: diplomaEl ? diplomaEl.value : currentSettings.diplomaContractId
+            nationalContractId: (nationalEl && nationalEl.value) ? nationalEl.value : currentSettings.nationalContractId,
+            diplomaContractId: (diplomaEl && diplomaEl.value) ? diplomaEl.value : currentSettings.diplomaContractId
         };
 
         if (adminUser) settings.adminUsername = adminUser;
