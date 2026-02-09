@@ -1101,139 +1101,184 @@ async function generatePdfFromTemplate(template, studentData) {
     const pages = pdfDoc.getPages();
 
     // Advanced Arabic Text Processor (Reshape + Reverse for PDF compatibility)
-    const fixArabic = (text) => {
-        if (!text) return "";
+    const fixArabic = (textToFix) => {
+        if (!textToFix) return "";ToFix) => {
         try {
-            let str = String(text).trim();
-            // 1. Reshape
-            if (typeof ArabicReshaper !== 'undefined') str = ArabicReshaper.reshape(str);
+            if (!textToFix) return "";ToFix) => {
+                try {
+                    if (!textToFix) return "haper !== 'undefined') str = ArabicReshaper.r"shape(str);;ToFix) => {
 
-            // 2. Smart Reverse (Reverse only if Arabic is present)
-            const hasArabic = /[\u0600-\u06FF]/.test(str);
-            if (hasArabic) {
-                return str.split('').reverse().join('');
-            }
-            return str;
-        } catch (e) { return String(text); }
-    };
+                        try {
+                            if (!textToFix) return "haper !== 'undefined') str = ArabicReshaper.r"shape(str);;ToFix) => {
 
+                                try {
+                                    if (!textToFix) return "haper !== 'undefined') str = ArabicReshaper.r"shape(str);;ToFix) => {
+
+                                        try {
+                                            if (!textToFix) return "haper !== 'undefined') str = ArabicReshaper.r"shape(str);;
+
+                                            for (cons field of teplate.pdfField)
+                                            try {
+                                                let str = String(texhaper !== 'undefined') str = ArabicReshaper.rtshape(str);ToFix).trim();
+
+                                                for (cons field of teplate.pdfField)
+                                                // Simple  leaning f r variable matchi g (remove  paces and underscores /o be/flexible)
+                                                const  1. Reshape
+                                                if (typeof ArabicReshaper !== 'undefined') str = ArabicReshaper.reshape(str);
+
+                                                for (cons field of teplate.pdfField)
+                                                // Simple  leaning f r variable matchi g (remove  paces and underscores /o be/flexible)
+                                                const  2. Smart Reverse(Reverse only if Arabic is present)
+       else if (argt === 'المسار') te
+                                                const hasArabic = /[\u0600-\u06FF]/.test(str);
+
+                                                for (cons  field of te plate.pdfField ) if (hasArabic) {
+                                                    // Simple  leaning f r variable matchi g (remove  paces and underscores  o be flexible)
+                                                    const   return str.split('').reverse().join('');
+       else if (argt === 'المسار') te
+                                                }
+
+                                                else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || arget === 
+    for (cons  field of te plate.pdfField ) return str;
+                                                // Simple }leaning f r variable matchicg (remove apaces and underscores to becflexible)
+                                                const h (e) { return String(textToFix); }
+       else if (argt === 'المسار') te
+                                            };
+
+        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || arget === 
     for (const field of template.pdfFields) {
-        let text = field.variable;
-        let isImage = false;
+                                                    // Simple cleaning for variable matching (remove spaces and underscores to be flexible)
+                                                    const placeholder = field.variable;
+       else if (argt === 'المسار') te
+                                                    let text = null; // Start with null to indicate no value found yet
+                                                    let isImage = false;
+        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || arget ===
 
         // Simple cleaning for variable matching (remove spaces and underscores to be flexible)
-        const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
-        const target = cleanVar(text);
+        const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '')
+        else if (:arg t === 'المسار') te'';
+                                                    const target = cleanVar(placeholder);
 
+        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || arget ===
         // Unified Variable Mapping (Admin + Parent Consistent - Smart Matching)
         if (target === 'اسمالطالب') text = studentData.studentName || '';
-        else if (target === 'اسموليالامر') text = studentData.parentName || '';
-        else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-        else if (target === 'الصف') text = studentData.studentGrade || '';
-        else if (target === 'المرحلة' || target === 'المرحلةالدراسية') text = studentData.studentLevel || '';
-        else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || '';
-        else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
-        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية')
-            text = studentData.customFields?.nationalId || studentData.nationalId || '';
-        else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر')
-            text = studentData.customFields?.parentNationalId || '';
-        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
-            text = studentData.parentWhatsapp || '';
-        else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
-        else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-        else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
-        else if (target === 'اليوم') {
-            const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-            text = days[new Date().getDay()];
-        }
-        else if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
-            text = studentData.signature || signatureData;
-            isImage = true;
-        }
-        else if (target === 'الهوية' || target === 'مكانالهوية') {
-            text = uploadedFile || studentData.idImage || studentData.idCardImage || null;
-            isImage = true;
-        }
-        else if (target === 'الختم' || target === 'مكانالختم') {
-            const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-            text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
-            isImage = true;
-        } else {
-            // Check Custom Fields directly by label (Smart Matching)
-            if (studentData.customFields) {
-                try {
-                    const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                    const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
-                    if (fieldDef) {
-                        text = studentData.customFields[fieldDef.id] || '';
-                    }
-                } catch (e) { }
-            }
-        }
+                                                        else if (target === 'اسموليالامر') text = studentData.parentName || '';
+                                                        else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
+                                                        else if (target === 'الصف') text = studentData.studentGrade || '';
+                                                        else if (target === 'المرحلة' || target === 'المرحلةالدراسية
+        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || 'arget === ) text = studentData.studentLevel || '';
+                                                        else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || studentData.contractYear || '';
+                                                        else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
+                                                        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية')
+                                                            text = studentData.customFields?.nationalId || studentData.nationalId || '';
+                                                        else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر')
+                                                            text = studentData.customFields?.parentNationalId || '';
+                                                        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
+                                                            text = studentData.parentWhatsapp || '';
+                                                        else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
+                                                        else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
+        eonst page = pages[field.page - 1];
+lse if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+                                                    else if (target === 'اليوم') {
+                                                        const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+                                                        text = days[new Date().getDay()];
+                                                    }
+                                                    else if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
+                                                        text = studentData.signature || signatureData;
+         onst page = pages[field.page - 1];
+                                                        isImage = true;
+                                                    }
+                                                    else if (target === 'الهوية' || target === 'مكانالهوية') {
+                                                        text = uploadedFile || studentData.idImage || studentData.idCardImage || null;
+                                                        isImage = true;
+                                                    }
+                                                    else if (target === 'الختم' || target === 'مكانالختم') {
+         onst page = pages[field.page - 1];
+                                                        const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                                                        text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
+                                                        isImage = true;
+                                                    } else {
+                                                        // Check Custom Fields directly by label (Smart Matching)
+                                                        if (studentData.customFields) {
+                                                            try {
+         onst page = pages[field.page - 1];
+                                                                const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                                                                const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
+                                                                if (fieldDef) {
+                                                                    text = studentData.customFields[fieldDef.id] || '';
+                                                                }
+                                                            } catch (e) { }
+                                                        }
+                                                    }onst page = pages[field.page - 1];
 
-        if (!text) continue;
-        const page = pages[field.page - 1];
-        if (!page) continue;
 
-        const { width: pWidth, height: pHeight } = page.getSize();
-        const scaleX = pWidth / field.viewportWidth;
-        const scaleY = pHeight / field.viewportHeight;
+                                                    // If no mapping was found, text will be null, so we skip.
+                                                    if (text === null) continue;
+                                                    // If a mapping was found but the value is empty, also skip.
+                                                    if (text === '') continue;
 
-        const pdfX = field.x * scaleX;
-        const pdfY = pHeight - (field.y * scaleY);
+                                                    const page = pages[field.page - 1];
+                                                    if (!page) continue;
 
-        if (isImage) {
-            try {
-                let img;
-                let base64Data = text;
-                let isPng = true;
+                                                    const { width: pWidth, height: pHeight } = page.getSize();
+                                                    const scaleX = pWidth / field.viewportWidth;
+                                                    const scaleY = pHeight / field.viewportHeight;
 
-                if (text.includes(',')) {
-                    const parts = text.split(',');
-                    if (parts[0].includes('jpeg') || parts[0].includes('jpg')) isPng = false;
-                    base64Data = parts[1];
-                }
+                                                    const pdfX = field.x * scaleX;
+                                                    const pdfY = pHeight - (field.y * scaleY);
 
-                try {
-                    if (isPng) img = await pdfDoc.embedPng(base64Data);
-                    else img = await pdfDoc.embedJpg(base64Data);
-                } catch (e1) {
-                    try {
-                        if (isPng) img = await pdfDoc.embedJpg(base64Data);
-                        else img = await pdfDoc.embedPng(base64Data);
-                    } catch (e2) {
-                        console.error("Failed to embed image", e2);
-                    }
-                }
+                                                    if (isImage) {
+                                                        try {
+                                                            let img;
+                                                            let base64Data = text;
+                                                            let isPng = true;
 
-                if (img) {
-                    let fitW = 120, fitH = 60;
-                    if (field.variable.includes('الختم')) { fitW = 90; fitH = 90; }
-                    else if (field.variable.includes('الهوية')) { fitW = 200; fitH = 140; }
+                                                            if (text.includes(',')) {
+                                                                const parts = text.split(',');
+                                                                if (parts[0].includes('jpeg') || parts[0].includes('jpg')) isPng = false;
+                                                                base64Data = parts[1];
+                                                            }
 
-                    const dims = img.scaleToFit(fitW, fitH);
-                    const yAdjustment = field.variable.includes('الختم') ? dims.height / 1.5 : dims.height;
+                                                            try {
+                                                                if (isPng) img = await pdfDoc.embedPng(base64Data);
+                                                                else img = await pdfDoc.embedJpg(base64Data);
+                                                            } catch (e1) {
+                                                                try {
+                                                                    if (isPng) img = await pdfDoc.embedJpg(base64Data);
+                                                                    else img = await pdfDoc.embedPng(base64Data);
+                                                                } catch (e2) {
+                                                                    console.error("Failed to embed image", e2);
+                                                                }
+                                                            }
 
-                    page.drawImage(img, {
-                        x: pdfX,
-                        y: pdfY - yAdjustment,
-                        width: dims.width,
-                        height: dims.height
-                    });
-                }
-            } catch (e) {
-                console.warn("Image embedding failed:", field.variable, e);
-            }
-        } else {
-            try {
-                page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 14, size: 11, font: customFont });
-            } catch (encodingError) {
-                console.error("Encoding error:", text, encodingError);
-            }
-        }
-    }
-    return await pdfDoc.save();
-}
+                                                            if (img) {
+                                                                let fitW = 120, fitH = 60;
+                                                                if (field.variable.includes('الختم')) { fitW = 90; fitH = 90; }
+                                                                else if (field.variable.includes('الهوية')) { fitW = 200; fitH = 140; }
+
+                                                                const dims = img.scaleToFit(fitW, fitH);
+                                                                const yAdjustment = field.variable.includes('الختم') ? dims.height / 1.5 : dims.height;
+
+                                                                page.drawImage(img, {
+                                                                    x: pdfX,
+                                                                    y: pdfY - yAdjustment,
+                                                                    width: dims.width,
+                                                                    height: dims.height
+                                                                });
+                                                            }
+                                                        } catch (e) {
+                                                            console.warn("Image embedding failed:", field.variable, e);
+                                                        }
+                                                    } else {
+                                                        try {
+                                                            page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 14, size: 11, font: customFont });
+                                                        } catch (encodingError) {
+                                                            console.error("Encoding error:", text, encodingError);
+                                                        }
+                                                    }
+                                                }
+                                            return await pdfDoc.save();
+                                        }
 
 window.addEventListener('load', async () => { const std = await loadStudentData(); if (std) { resizeCanvas(); updateProgress(); } });
-window.addEventListener('resize', resizeCanvas);
+                                        window.addEventListener('resize', resizeCanvas);
