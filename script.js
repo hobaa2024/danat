@@ -414,19 +414,26 @@ const UI = {
 
         let contractToSelect = '';
 
-        if (selectedTrack.includes('دبلوما')) { // "مسار دبلوما أمريكية"
+        // Enhanced matching logic (Regex)
+        if (selectedTrack.match(/دبلوما|diploma/i)) {
             contractToSelect = settings.diplomaContractId;
-        } else if (selectedTrack.includes('ثنائي اللغة')) { // "مسار ثنائي اللغة"
+        } else if (selectedTrack.match(/ثنائي|أهلي|national|bilingual|عام/i)) {
             contractToSelect = settings.nationalContractId;
         }
 
         if (selectedTrack && !contractToSelect) {
-            UI.showNotification(`⚠️ تنبيه: لا يوجد عقد تلقائي مربوط بهذا المسار في الإعدادات.`);
-        } else if (contractToSelect && !contractSelect.querySelector(`option[value="${contractToSelect}"]`)) {
-            UI.showNotification(`⚠️ خطأ: العقد المربوط بالمسار (ID: ${contractToSelect}) غير موجود في قائمة العقود.`);
+            // Only warn if track is selected but no contract mapped
+            console.warn('No contract mapped for track:', selectedTrack);
+            UI.showNotification(`⚠️ تنبيه: لم يتم تحديد عقد افتراضي لهذا المسار (${selectedTrack}) في الإعدادات.`);
         } else if (contractToSelect) {
-            contractSelect.value = contractToSelect;
-            UI.showNotification(`✅ تم اختيار العقد التلقائي للمسار: ${contractSelect.options[contractSelect.selectedIndex].text}`);
+            // Check if contract exists in dropdown
+            const option = contractSelect.querySelector(`option[value="${contractToSelect}"]`);
+            if (option) {
+                contractSelect.value = contractToSelect;
+                UI.showNotification(`✅ تم اختيار العقد التلقائي: ${option.text}`);
+            } else {
+                UI.showNotification(`⚠️ خطأ: العقد المربوط (ID: ${contractToSelect}) غير موجود في القائمة.`);
+            }
         }
     },
 
@@ -1567,6 +1574,10 @@ ${link}
 
         const currentSettings = db.getSettings();
 
+        // Safe capture of contract IDs (don't overwrite with null if element is missing)
+        const nationalEl = document.getElementById('nationalContractSetting');
+        const diplomaEl = document.getElementById('diplomaContractSetting');
+
         const settings = {
             ...currentSettings, // Keep existing keys
             schoolName,
@@ -1578,8 +1589,9 @@ ${link}
             customFields,
             schoolLogo: logo.startsWith('data:') ? logo : (currentSettings.schoolLogo || ''),
             stampImage: stampImage.startsWith('data:') ? stampImage : (currentSettings.stampImage || ''),
-            nationalContractId: document.getElementById('nationalContractSetting')?.value || null,
-            diplomaContractId: document.getElementById('diplomaContractSetting')?.value || null
+            // Only update if element exists, otherwise keep existing value
+            nationalContractId: nationalEl ? nationalEl.value : currentSettings.nationalContractId,
+            diplomaContractId: diplomaEl ? diplomaEl.value : currentSettings.diplomaContractId
         };
 
         if (adminUser) settings.adminUsername = adminUser;
@@ -1659,6 +1671,23 @@ ${link}
         });
 
         const content = document.getElementById(`tab-${tabId}`);
+
+        // Fallback: Try mapping common names if exact match fails
+        if (!content) {
+            const map = {
+                'security': 'tab-account', 'account': 'tab-security',
+                'backup': 'tab-system', 'system': 'tab-backup'
+            };
+            if (map[tabId]) {
+                const altContent = document.getElementById(map[tabId]);
+                if (altContent) {
+                    altContent.classList.add('active');
+                    altContent.style.display = 'block';
+                    return;
+                }
+            }
+        }
+
         if (content) {
             content.classList.add('active');
             content.style.display = 'block';
@@ -1834,6 +1863,7 @@ ${link}
 
     loadSettingsPage() {
         try {
+            this.populateDynamicSelects(); // Ensure dropdowns are populated first!
             const settings = db.getSettings();
 
             // Text Inputs
