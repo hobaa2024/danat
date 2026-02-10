@@ -1219,6 +1219,11 @@ async function generatePdfFromTemplate(template, studentData) {
         const { width: pWidth, height: pHeight } = page.getSize();
         const scaleX = pWidth / field.viewportWidth;
         const scaleY = pHeight / field.viewportHeight;
+        // Fallback defaults for fields saved before width/height were stored
+        const isImageField = target.includes('\u062a\u0648\u0642\u064a\u0639') || target.includes('\u062e\u062a\u0645') || target.includes('\u0647\u0648\u064a\u0629');
+        const fieldW = field.width || (isImageField ? 120 : 160);
+        const fieldH = field.height || (isImageField ? 60 : 28);
+        const fW = fieldW * scaleX, fH = fieldH * scaleY;
         const pdfX = field.x * scaleX;
         const pdfY = pHeight - (field.y * scaleY);
 
@@ -1236,16 +1241,25 @@ async function generatePdfFromTemplate(template, studentData) {
                 }
 
                 if (img) {
-                    let fitW = 120, fitH = 60;
-                    if (target.includes('ختم')) { fitW = 90; fitH = 90; }
-                    else if (target.includes('هوية')) { fitW = 200; fitH = 140; }
+                    let fitW = fW * 0.9, fitH = fH * 0.9;
+                    if (target.includes('\u062e\u062a\u0645')) { fitW = Math.max(fitW, 85); fitH = Math.max(fitH, 85); }
+                    else if (target.includes('\u0647\u0648\u064a\u0629')) { fitW = Math.max(fitW, 200); fitH = Math.max(fitH, 140); }
                     const dims = img.scaleToFit(fitW, fitH);
-                    page.drawImage(img, { x: pdfX, y: pdfY - dims.height, width: dims.width, height: dims.height });
+                    page.drawImage(img, {
+                        x: pdfX + (fW - dims.width) / 2,
+                        y: pdfY - dims.height - (fH - dims.height) / 2,
+                        width: dims.width, height: dims.height
+                    });
                 }
             } catch (e) { console.warn("Image embedding failed:", e); }
         } else {
             try {
-                page.drawText(fixArabic(text), { x: pdfX, y: pdfY - 14, size: 11, font: customFont, color: rgb(0, 0, 0) });
+                const size = 11;
+                const fixed = fixArabic(text);
+                const tw = customFont.widthOfTextAtSize(fixed, size);
+                let dx = pdfX + (fW - tw) / 2;
+                if (tw > fW * 0.9) dx = pdfX + fW - tw - 5;
+                page.drawText(fixed, { x: dx, y: pdfY - (fH / 2) - 3, size, font: customFont, color: rgb(0, 0, 0) });
             } catch (encodingError) {
                 console.error("Encoding error:", text, encodingError);
             }

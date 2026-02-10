@@ -108,57 +108,99 @@ class ContractManager {
 
     replaceVariables(content, studentData) {
         let result = content;
+        const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
 
-        // Text Variables
-        result = result.replace(/{اسم_الطالب}/g, studentData.studentName || '');
-        result = result.replace(/{اسم_ولي_الامر}/g, studentData.parentName || '');
-        result = result.replace(/{المسار}/g, studentData.customFields?.studentTrack || studentData.studentTrack || '');
-        result = result.replace(/{الصف}/g, studentData.studentGrade || '');
-        result = result.replace(/{المرحلة}/g, studentData.studentLevel || '');
-        result = result.replace(/{السنة_الدراسية}/g, studentData.customFields?.contractYear || '');
-        result = result.replace(/{البريد_الالكتروني}/g, studentData.parentEmail || '');
+        // Build mappings (key is cleaned variable name, value is replacement)
+        const varMappings = {
+            'اسمالطالب': studentData.studentName || '',
+            'اسموليالامر': studentData.parentName || '',
+            'اسموليالأمر': studentData.parentName || '',
+            'المسار': studentData.customFields?.studentTrack || studentData.studentTrack || '',
+            'المسارالتعليمي': studentData.customFields?.studentTrack || studentData.studentTrack || '',
+            'الصف': studentData.studentGrade || '',
+            'الصفالدراسي': studentData.studentGrade || '',
+            'المرحلة': studentData.studentLevel || '',
+            'المرحلةالدراسية': studentData.studentLevel || '',
+            'القسم': studentData.studentLevel || '',
+            'السنةالدراسية': studentData.customFields?.contractYear || studentData.contractYear || '',
+            'البريدالالكتروني': studentData.parentEmail || '',
+            'بريدوليالامر': studentData.parentEmail || '',
+            'هويةالطالب': studentData.customFields?.nationalId || studentData.nationalId || '',
+            'رقمهويةالطالب': studentData.customFields?.nationalId || studentData.nationalId || '',
+            'الرقمالقومي': studentData.customFields?.nationalId || studentData.nationalId || '',
+            'رقمهوية': studentData.customFields?.nationalId || studentData.nationalId || '',
+            'هويةوليالامر': studentData.customFields?.parentNationalId || studentData.parentNationalId || '',
+            'هويةوليالأمر': studentData.customFields?.parentNationalId || studentData.parentNationalId || '',
+            'رقمهويةوليالأمر': studentData.customFields?.parentNationalId || studentData.parentNationalId || '',
+            'جوالوليالأمر': studentData.parentWhatsapp || '',
+            'رقمجوالوليالأمر': studentData.parentWhatsapp || '',
+            'جوال': studentData.parentWhatsapp || '',
+            'الواتساب': studentData.parentWhatsapp || '',
+            'رقمالواتساب': studentData.parentWhatsapp || '',
+            'العنوان': studentData.address || studentData.customFields?.address || '',
+            'الجنسية': studentData.nationality || studentData.customFields?.nationality || ''
+        };
 
-        // New Variables requested by user
-        result = result.replace(/{هوية_الطالب}/g, studentData.customFields?.nationalId || studentData.nationalId || '');
-        result = result.replace(/{هوية_ولي_الأمر}/g, studentData.customFields?.parentNationalId || '');
-        result = result.replace(/{جوال_ولي_الأمر}/g, studentData.parentWhatsapp || '');
-
+        // Date/Time
         const now = new Date();
         const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-        result = result.replace(/{اليوم}/g, days[now.getDay()]);
-        result = result.replace(/{التاريخ}/g, now.toLocaleDateString('ar-SA'));
+        varMappings['اليوم'] = days[now.getDay()];
+        varMappings['التاريخ'] = now.toLocaleDateString('ar-SA');
 
-        // Image Variables (HTML Rendering)
-        // Signature
-        if (result.includes('{التوقيع}')) {
-            const sigImg = studentData.signature
-                ? `<img src="${studentData.signature}" style="max-height:80px; max-width:200px; display:block; margin:10px 0;">`
-                : '<span style="color:#e53e3e;">(لم يوقع بعد)</span>';
-            result = result.replace(/{التوقيع}/g, sigImg);
-        }
+        // Find all {variables} in content and replace using smart matching
+        const foundVars = result.match(/\{[^}]+\}/g) || [];
+        foundVars.forEach(v => {
+            const target = cleanVar(v);
 
-        // Stamp
-        if (result.includes('{الختم}')) {
-            try {
-                let stampSrc = null;
-                if (typeof db !== 'undefined' && db.getSettings) stampSrc = db.getSettings().stampImage;
-                else stampSrc = JSON.parse(localStorage.getItem('appSettings') || '{}').stampImage;
+            // Check standard mappings
+            if (varMappings[target] !== undefined) {
+                result = result.replace(v, varMappings[target]);
+                return;
+            }
 
-                const stampImg = stampSrc
-                    ? `<img src="${stampSrc}" style="max-height:80px; max-width:120px; display:block; margin:10px 0;">`
-                    : '';
-                result = result.replace(/{الختم}/g, stampImg);
-            } catch (e) { }
-        }
+            // Image Variables
+            if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
+                const sigImg = studentData.signature
+                    ? `<img src="${studentData.signature}" style="max-height:80px; max-width:200px; display:block; margin:10px 0;">`
+                    : '<span style="color:#e53e3e;">(لم يوقع بعد)</span>';
+                result = result.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), sigImg);
+                return;
+            }
 
-        // ID Image
-        if (result.includes('{الهوية}')) {
-            const idSrc = studentData.idImage || studentData.idCardImage;
-            const idImg = idSrc
-                ? `<img src="${idSrc}" style="max-height:150px; max-width:300px; display:block; margin:10px 0; border:1px solid #ccc;">`
-                : '<span style="color:#718096;">(صورة الهوية غير متوفرة)</span>';
-            result = result.replace(/{الهوية}/g, idImg);
-        }
+            if (target === 'الختم' || target === 'ختمالمدرسة') {
+                try {
+                    let stampSrc = null;
+                    if (typeof db !== 'undefined' && db.getSettings) stampSrc = db.getSettings().stampImage;
+                    else stampSrc = JSON.parse(localStorage.getItem('appSettings') || '{}').stampImage;
+
+                    const stampImg = stampSrc
+                        ? `<img src="${stampSrc}" style="max-height:80px; max-width:120px; display:block; margin:10px 0;">`
+                        : '';
+                    result = result.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), stampImg);
+                } catch (e) { }
+                return;
+            }
+
+            if (target === 'الهوية' || target === 'صورةالهوية') {
+                const idSrc = studentData.idImage || studentData.idCardImage;
+                const idImg = idSrc
+                    ? `<img src="${idSrc}" style="max-height:150px; max-width:300px; display:block; margin:10px 0; border:1px solid #ccc;">`
+                    : '<span style="color:#718096;">(صورة الهوية غير متوفرة)</span>';
+                result = result.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), idImg);
+                return;
+            }
+
+            // Check custom fields by label
+            if (studentData.customFields) {
+                try {
+                    const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
+                    const fieldDef = (s.customFields || []).find(f => cleanVar(f.label) === target);
+                    if (fieldDef) {
+                        result = result.replace(v, studentData.customFields[fieldDef.id] || '');
+                    }
+                } catch (e) { }
+            }
+        });
 
         return result;
     }
@@ -429,8 +471,12 @@ class ContractManager {
             if (!page) continue;
 
             const { width: pW, height: pH } = page.getSize();
+            // Fallback defaults for fields saved before width/height were stored
+            const isImageField = target.includes('توقيع') || target.includes('ختم') || target.includes('هوية');
+            const fieldW = field.width || (isImageField ? 120 : 160);
+            const fieldH = field.height || (isImageField ? 60 : 28);
             const sX = pW / field.viewportWidth, sY = pH / field.viewportHeight;
-            const fW = field.width * sX, fH = field.height * sY;
+            const fW = fieldW * sX, fH = fieldH * sY;
             const pdfX = field.x * sX, pdfY = pH - (field.y * sY);
 
             if (isImage) {
@@ -457,7 +503,6 @@ class ContractManager {
                     let dx = pdfX + (fW - tw) / 2;
                     if (tw > fW * 0.9) dx = pdfX + fW - tw - 5;
                     page.drawText(fixed, { x: dx, y: pdfY - (fH / 2) - 3, size, font: customFont, color: rgb(0, 0, 0) });
-                    page.drawText(fixed, { x: dx, y: pdfY - (fH / 2) - 4, size, font: customFont, color: rgb(0, 0, 0) });
                 } catch (err) { }
             }
         }
@@ -837,19 +882,19 @@ const ContractUI = {
         const x = (e.clientX - rect.left);
         const y = (e.clientY - rect.top);
 
-        // Save normalized coordinates (unscaled) if we want resolution independence, 
-        // but for simplicity we will store scaled coordinates and re-calculate during generation based on viewport.
-        // Actually, to serve the 'pdf-lib' later, we need PDF points (72 DPI usually).
-        // PDF.js default viewport scale 1.0 is 72 DPI.
-
-        // Let's store the raw coordinates relative to the CURRENT viewport size. 
-        // When generating, we must know the viewport size used during design.
+        // Determine default size based on variable type
+        const isImage = manager.selectedVariable === '{توقيع}' || manager.selectedVariable === '{التوقيع}' ||
+            manager.selectedVariable === '{الختم}' || manager.selectedVariable === '{الهوية}';
+        const defaultWidth = isImage ? 120 : 160;
+        const defaultHeight = isImage ? 60 : 28;
 
         const field = {
             id: Date.now().toString(),
             page: manager.pageNum,
             x: x,
             y: y,
+            width: defaultWidth,
+            height: defaultHeight,
             variable: manager.selectedVariable,
             viewportWidth: manager.canvas.width,
             viewportHeight: manager.canvas.height
@@ -878,8 +923,12 @@ const ContractUI = {
             if (field.page === manager.pageNum) {
                 const isImage = field.variable === '{توقيع}' || field.variable === '{التوقيع}' ||
                     field.variable === '{الختم}' || field.variable === '{الهوية}';
-                const width = isImage ? 120 : 160;
-                const height = isImage ? 60 : 28;
+                // Use saved width/height, fallback to defaults for backward compatibility
+                const width = field.width || (isImage ? 120 : 160);
+                const height = field.height || (isImage ? 60 : 28);
+                // Ensure width/height are saved back to field if missing
+                if (!field.width) field.width = width;
+                if (!field.height) field.height = height;
 
                 const div = document.createElement('div');
                 div.className = 'pdf-field-box';
@@ -961,16 +1010,44 @@ const ContractUI = {
         }
     },
 
+    resizePdfField(id, scaleFactor) {
+        const field = this.pdfManager.addedFields.find(f => f.id === id);
+        if (!field) return;
+
+        const isImage = field.variable === '{توقيع}' || field.variable === '{التوقيع}' ||
+            field.variable === '{الختم}' || field.variable === '{الهوية}';
+
+        // Set defaults if missing
+        if (!field.width) field.width = isImage ? 120 : 160;
+        if (!field.height) field.height = isImage ? 60 : 28;
+
+        // Apply scale with min/max limits
+        const step = scaleFactor > 0 ? 1.15 : 0.85;
+        field.width = Math.max(40, Math.min(400, Math.round(field.width * step)));
+        field.height = Math.max(16, Math.min(200, Math.round(field.height * step)));
+
+        this.renderOverlays();
+        this.renderAddedFieldsList();
+    },
+
     renderAddedFieldsList() {
         const list = document.getElementById('addedFieldsList');
         if (!list) return;
 
-        list.innerHTML = this.pdfManager.addedFields.map(field => `
-            <li style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 6px; margin-bottom: 4px; border-radius: 4px; border: 1px solid #e2e8f0;">
-                <span>${field.variable} <small style="color:#718096">(ص ${field.page})</small></span>
-                <button onclick="ContractUI.removePdfField('${field.id}')" style="color: red; border: none; background: none; cursor: pointer;">&times;</button>
-            </li>
-        `).join('');
+        list.innerHTML = this.pdfManager.addedFields.map(field => {
+            const w = field.width || 160;
+            const h = field.height || 28;
+            return `
+            <li style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; border: 1px solid #e2e8f0; gap: 6px;">
+                <span style="flex: 1; font-size: 12px; font-weight: 600;">${field.variable} <small style="color:#718096">(ص${field.page})</small></span>
+                <span style="font-size: 10px; color: #94a3b8; min-width: 60px; text-align: center;">${w}×${h}</span>
+                <div style="display: flex; gap: 3px; align-items: center;">
+                    <button onclick="ContractUI.resizePdfField('${field.id}', -1)" title="تصغير" style="width:24px; height:24px; border: 1px solid #cbd5e0; background: #f1f5f9; border-radius: 4px; cursor: pointer; font-size: 14px; display:flex; align-items:center; justify-content:center; color:#334155;">−</button>
+                    <button onclick="ContractUI.resizePdfField('${field.id}', 1)" title="تكبير" style="width:24px; height:24px; border: 1px solid #cbd5e0; background: #f1f5f9; border-radius: 4px; cursor: pointer; font-size: 14px; display:flex; align-items:center; justify-content:center; color:#334155;">+</button>
+                    <button onclick="ContractUI.removePdfField('${field.id}')" title="حذف" style="width:24px; height:24px; color: #ef4444; border: 1px solid #fecaca; background: #fef2f2; border-radius: 4px; cursor: pointer; font-size: 14px; display:flex; align-items:center; justify-content:center;">&times;</button>
+                </div>
+            </li>`;
+        }).join('');
     },
 
     removePdfField(id) {
