@@ -859,20 +859,31 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
         if (idx !== -1) { Object.assign(students[idx], data); localStorage.setItem('students', JSON.stringify(students)); }
     }
 
-    // Call the correct function name
-    if (typeof showAlreadySignedSimplified === 'function') {
-        const studentName = document.getElementById('contractStudentName')?.textContent || 'Student';
-        showAlreadySignedSimplified({
-            studentName,
-            contractNo,
-            signedAt: now.toISOString(),
-            signature: signatureData,
-            idImage: uploadedFile,
-            contractType: currentStudent?.contractType || 'text',
-            contract: currentStudent?.contract || null
-        });
+    // Call the correct function - showSuccessAfterSigning for FRESH signatures
+    const studentName = document.getElementById('contractStudentName')?.textContent || 'Student';
+    const successData = {
+        studentName,
+        contractNo,
+        signedAt: now.toISOString(),
+        signature: signatureData,
+        idImage: uploadedFile,
+        contractType: currentStudent?.contractType || 'text',
+        contract: currentStudent?.contract || null,
+        cachedContractContent: currentStudent?.cachedContractContent || '',
+        cachedContractTitle: currentStudent?.cachedContractTitle || ''
+    };
+
+    if (typeof showSuccessAfterSigning === 'function') {
+        showSuccessAfterSigning(successData);
 
         // Setup download button immediately
+        setTimeout(() => {
+            setupPdfDownload(studentName, contractNo);
+        }, 500);
+    } else if (typeof showAlreadySignedSimplified === 'function') {
+        // Fallback only if showSuccessAfterSigning doesn't exist
+        showAlreadySignedSimplified(successData);
+
         setTimeout(() => {
             setupPdfDownload(studentName, contractNo);
         }, 500);
