@@ -930,6 +930,10 @@ const ContractUI = {
                 if (!field.width) field.width = width;
                 if (!field.height) field.height = height;
 
+                const borderColor = isImage ? "#10b981" : "#667eea";
+                const bgColor = isImage ? "rgba(16, 185, 129, 0.2)" : "rgba(102, 126, 234, 0.15)";
+                const textColor = isImage ? "#047857" : "#4338ca";
+
                 const div = document.createElement('div');
                 div.className = 'pdf-field-box';
                 div.id = `field-${field.id}`;
@@ -939,9 +943,9 @@ const ContractUI = {
                     top: ${field.y}px;
                     width: ${width}px;
                     height: ${height}px;
-                    background: ${isImage ? "rgba(16, 185, 129, 0.2)" : "rgba(102, 126, 234, 0.15)"};
-                    border: 2px solid ${isImage ? "#10b981" : "#667eea"};
-                    color: ${isImage ? "#047857" : "#4338ca"};
+                    background: ${bgColor};
+                    border: 2px solid ${borderColor};
+                    color: ${textColor};
                     border-radius: 4px;
                     display: flex;
                     align-items: center;
@@ -953,10 +957,150 @@ const ContractUI = {
                     user-select: none;
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 `;
-                div.textContent = field.variable;
 
-                // Drag Start
+                // Variable label
+                const label = document.createElement('span');
+                label.style.cssText = 'pointer-events: none; text-align: center; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90%;';
+                label.textContent = field.variable;
+                div.appendChild(label);
+
+                // --- Control toolbar (shows on hover) ---
+                const toolbar = document.createElement('div');
+                toolbar.className = 'field-toolbar';
+                toolbar.style.cssText = `
+                    position: absolute;
+                    top: -28px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    display: none;
+                    gap: 2px;
+                    background: white;
+                    border: 1px solid #cbd5e0;
+                    border-radius: 6px;
+                    padding: 2px 4px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                    z-index: 1001;
+                    align-items: center;
+                `;
+
+                const btnStyle = `
+                    width: 22px; height: 22px; border: none; border-radius: 4px;
+                    cursor: pointer; font-size: 13px; font-weight: bold;
+                    display: flex; align-items: center; justify-content: center;
+                    transition: background 0.15s;
+                `;
+
+                // + Button (Bigger)
+                const btnPlus = document.createElement('button');
+                btnPlus.innerHTML = '+';
+                btnPlus.title = 'تكبير';
+                btnPlus.style.cssText = btnStyle + 'background: #f0fdf4; color: #16a34a;';
+                btnPlus.onmouseenter = () => btnPlus.style.background = '#bbf7d0';
+                btnPlus.onmouseleave = () => btnPlus.style.background = '#f0fdf4';
+                btnPlus.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    ContractUI.resizePdfField(field.id, 1);
+                });
+
+                // − Button (Smaller)
+                const btnMinus = document.createElement('button');
+                btnMinus.innerHTML = '−';
+                btnMinus.title = 'تصغير';
+                btnMinus.style.cssText = btnStyle + 'background: #fef9c3; color: #a16207;';
+                btnMinus.onmouseenter = () => btnMinus.style.background = '#fde68a';
+                btnMinus.onmouseleave = () => btnMinus.style.background = '#fef9c3';
+                btnMinus.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    ContractUI.resizePdfField(field.id, -1);
+                });
+
+                // × Button (Delete)
+                const btnDel = document.createElement('button');
+                btnDel.innerHTML = '×';
+                btnDel.title = 'حذف';
+                btnDel.style.cssText = btnStyle + 'background: #fef2f2; color: #ef4444;';
+                btnDel.onmouseenter = () => btnDel.style.background = '#fecaca';
+                btnDel.onmouseleave = () => btnDel.style.background = '#fef2f2';
+                btnDel.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    ContractUI.removePdfField(field.id);
+                });
+
+                // Size label
+                const sizeLabel = document.createElement('span');
+                sizeLabel.style.cssText = 'font-size: 9px; color: #94a3b8; padding: 0 3px; white-space: nowrap;';
+                sizeLabel.textContent = `${width}×${height}`;
+
+                toolbar.appendChild(btnPlus);
+                toolbar.appendChild(btnMinus);
+                toolbar.appendChild(sizeLabel);
+                toolbar.appendChild(btnDel);
+                div.appendChild(toolbar);
+
+                // Show/hide toolbar on hover
+                div.addEventListener('mouseenter', () => {
+                    toolbar.style.display = 'flex';
+                });
+                div.addEventListener('mouseleave', () => {
+                    if (!this.pdfManager.resizingFieldId) {
+                        toolbar.style.display = 'none';
+                    }
+                });
+
+                // --- Corner resize handle (bottom-left for RTL) ---
+                const resizeHandle = document.createElement('div');
+                resizeHandle.style.cssText = `
+                    position: absolute;
+                    bottom: -4px;
+                    left: -4px;
+                    width: 10px;
+                    height: 10px;
+                    background: ${borderColor};
+                    border-radius: 2px;
+                    cursor: nwse-resize;
+                    z-index: 1002;
+                    opacity: 0.7;
+                    transition: opacity 0.15s;
+                `;
+                resizeHandle.onmouseenter = () => resizeHandle.style.opacity = '1';
+                resizeHandle.onmouseleave = () => resizeHandle.style.opacity = '0.7';
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.handleResizeStart(field.id, e);
+                });
+                div.appendChild(resizeHandle);
+
+                // Also add a right-side resize handle
+                const resizeHandleR = document.createElement('div');
+                resizeHandleR.style.cssText = `
+                    position: absolute;
+                    bottom: -4px;
+                    right: -4px;
+                    width: 10px;
+                    height: 10px;
+                    background: ${borderColor};
+                    border-radius: 2px;
+                    cursor: nesw-resize;
+                    z-index: 1002;
+                    opacity: 0.7;
+                    transition: opacity 0.15s;
+                `;
+                resizeHandleR.onmouseenter = () => resizeHandleR.style.opacity = '1';
+                resizeHandleR.onmouseleave = () => resizeHandleR.style.opacity = '0.7';
+                resizeHandleR.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.handleResizeStart(field.id, e);
+                });
+                div.appendChild(resizeHandleR);
+
+                // Drag Start (only from label area, not from handles)
                 div.addEventListener('mousedown', (e) => {
+                    if (e.target === resizeHandle || e.target === resizeHandleR) return;
                     e.stopPropagation();
                     const rect = div.getBoundingClientRect();
                     this.pdfManager.draggingFieldId = field.id;
@@ -971,8 +1115,43 @@ const ContractUI = {
         });
     },
 
+    // --- Resize by dragging corner handle ---
+    handleResizeStart(fieldId, e) {
+        this.pdfManager.resizingFieldId = fieldId;
+        this.pdfManager.resizeStartX = e.clientX;
+        this.pdfManager.resizeStartY = e.clientY;
+        const field = this.pdfManager.addedFields.find(f => f.id === fieldId);
+        if (field) {
+            this.pdfManager.resizeStartW = field.width;
+            this.pdfManager.resizeStartH = field.height;
+        }
+    },
+
     handleDragMove(e) {
         const mgr = this.pdfManager;
+
+        // Handle resize drag
+        if (mgr.resizingFieldId) {
+            const field = mgr.addedFields.find(f => f.id === mgr.resizingFieldId);
+            if (field) {
+                const dx = e.clientX - mgr.resizeStartX;
+                const dy = e.clientY - mgr.resizeStartY;
+                field.width = Math.max(40, Math.min(500, Math.round(mgr.resizeStartW + dx)));
+                field.height = Math.max(16, Math.min(300, Math.round(mgr.resizeStartH + dy)));
+
+                const div = document.getElementById(`field-${field.id}`);
+                if (div) {
+                    div.style.width = `${field.width}px`;
+                    div.style.height = `${field.height}px`;
+                    // Update size label in toolbar
+                    const sizeSpan = div.querySelector('.field-toolbar span');
+                    if (sizeSpan) sizeSpan.textContent = `${field.width}×${field.height}`;
+                }
+            }
+            return;
+        }
+
+        // Handle position drag
         if (!mgr.draggingFieldId) return;
 
         const container = document.getElementById('pdfCanvasContainer');
@@ -982,8 +1161,8 @@ const ContractUI = {
         let y = e.clientY - rect.top - mgr.dragOffsetY;
 
         // Constraint within container
-        x = Math.max(0, Math.min(x, container.clientWidth - 120));
-        y = Math.max(0, Math.min(y, container.clientHeight - 24));
+        x = Math.max(0, Math.min(x, container.clientWidth - 40));
+        y = Math.max(0, Math.min(y, container.clientHeight - 16));
 
         const field = mgr.addedFields.find(f => f.id === mgr.draggingFieldId);
         if (field) {
@@ -999,6 +1178,15 @@ const ContractUI = {
     },
 
     handleDragEnd() {
+        // End resize
+        if (this.pdfManager.resizingFieldId) {
+            this.pdfManager.resizingFieldId = null;
+            this.renderOverlays();
+            this.renderAddedFieldsList();
+            return;
+        }
+
+        // End drag
         if (this.pdfManager.draggingFieldId) {
             const div = document.getElementById(`field-${this.pdfManager.draggingFieldId}`);
             if (div) {
@@ -1006,7 +1194,7 @@ const ContractUI = {
                 div.style.zIndex = 'auto';
             }
             this.pdfManager.draggingFieldId = null;
-            this.renderAddedFieldsList(); // Update labels if needed
+            this.renderAddedFieldsList();
         }
     },
 
