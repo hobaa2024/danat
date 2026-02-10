@@ -236,23 +236,48 @@ class DatabaseManager {
     }
 
     getStudents() {
-        return JSON.parse(localStorage.getItem('students') || '[]');
+        const stored = localStorage.getItem('students');
+        if (!stored) return [];
+        try {
+            const parsed = JSON.parse(stored);
+            if (!Array.isArray(parsed)) return [];
+            // FILTER OUT GARBAGE (The fix for "undefined" appearing on refresh)
+            return parsed.filter(s => s && s.id && s.studentName && s.studentName !== 'undefined');
+        } catch (e) {
+            console.error('Data Parsing Error:', e);
+            return [];
+        }
     }
 
     saveStudent(student) {
+        // VALIDATION: Never save garbage
+        if (!student || !student.studentName || student.studentName === 'undefined') {
+            console.warn('⚠️ Attempted to save invalid student blocked:', student);
+            return;
+        }
+
         const students = this.getStudents();
-        const existingIndex = students.findIndex(s => s.id === student.id);
+        const existingIndex = students.findIndex(s => String(s.id) === String(student.id));
         if (student.id && existingIndex !== -1) {
             students[existingIndex] = { ...students[existingIndex], ...student };
         } else {
             if (!student.id) student.id = Date.now().toString();
-            if (!student.contractStatus) student.contractStatus = 'pending';
-            if (!student.createdAt) student.createdAt = new Date().toISOString();
+            // Double check duplication by name if ID is new (rare case but safe)
+            // const dup = students.find(s => s.studentName === student.studentName && s.parentWhatsapp === student.parentWhatsapp);
+            // if (!dup) 
             students.push(student);
         }
-        localStorage.setItem('students', JSON.stringify(students));
-        if (typeof CloudDB !== 'undefined') CloudDB.saveStudent(student);
+        this.saveStudents(students);
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            CloudDB.saveStudent(student);
+        }
         return student;
+    }
+
+    saveStudents(students) {
+        // Final safety filter before writing to disk
+        const clean = students.filter(s => s && s.id && s.studentName);
+        localStorage.setItem('students', JSON.stringify(clean));
     }
 
     deleteStudent(id) {
@@ -1014,236 +1039,236 @@ const UI = {
         if (!template) template = contractMgr.getDefaultContract();
 
         if (!template) {
-            this.showNotification('⚠️ عذراً، لم يتم العثور على قالب العقد لهذا الطالب');
-            return;
+        }
+        return;
+    }
+
+        if(template && template.type === 'pdf_template') {
+        this.showNotification('جاري إنشاء ملف PDF...');
+try {
+    const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.download = `عقد_${student.studentName}.pdf`;
+    link.click();
+} catch (err) {
+    console.error("PDF Generation Error:", err);
+    alert("حدث خطأ أثناء إنشاء ملف PDF: " + err.message);
+}
+return;
         }
 
-        if (template && template.type === 'pdf_template') {
-            this.showNotification('جاري إنشاء ملف PDF...');
-            try {
-                const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
-                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                const link = document.createElement('a');
-                link.href = window.URL.createObjectURL(blob);
-                link.download = `عقد_${student.studentName}.pdf`;
-                link.click();
-            } catch (err) {
-                console.error("PDF Generation Error:", err);
-                alert("حدث خطأ أثناء إنشاء ملف PDF: " + err.message);
-            }
-            return;
-        }
-
-        // Use professional HTML to PDF layout (Harmonized with contract.js)
-        // High-Visibility Flash Capture (ENSURES RENDERING)
-        const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100vw';
-        overlay.style.height = '100vh';
-        overlay.style.background = 'white';
-        overlay.style.zIndex = '100000';
-        overlay.style.display = 'block'; // FIX: Changed from flex to block
-        overlay.style.textAlign = 'center';
-        overlay.style.overflowY = 'auto';
-        overlay.style.padding = '40px 0';
-        overlay.style.direction = 'rtl';
-        overlay.innerHTML = `
+// Use professional HTML to PDF layout (Harmonized with contract.js)
+// High-Visibility Flash Capture (ENSURES RENDERING)
+const overlay = document.createElement('div');
+overlay.style.position = 'fixed';
+overlay.style.top = '0';
+overlay.style.left = '0';
+overlay.style.width = '100vw';
+overlay.style.height = '100vh';
+overlay.style.background = 'white';
+overlay.style.zIndex = '100000';
+overlay.style.display = 'block'; // FIX: Changed from flex to block
+overlay.style.textAlign = 'center';
+overlay.style.overflowY = 'auto';
+overlay.style.padding = '40px 0';
+overlay.style.direction = 'rtl';
+overlay.innerHTML = `
             <div style="margin-bottom:20px; font-weight:bold; color:#1e3a8a; font-family:Cairo, sans-serif; font-size:18px;">جاري استخراج ملف PDF...</div>
             <div id="capture-render-area" style="background:white; pointer-events:none; direction:rtl; text-align:right;">
                 ${this.getContractSummaryHTML(student)}
             </div>
         `;
-        document.body.appendChild(overlay);
+document.body.appendChild(overlay);
 
-        const captureArea = overlay.querySelector('#capture-render-area');
-        const opt = {
-            margin: [15, 15, 15, 15],  // Equal margins on all sides
-            filename: `عقد_${student.studentName}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: {
-                scale: 2,
-                useCORS: true,
-                logging: true,
-                scrollY: 0,
-                scrollX: 0,
-                width: 794,
-                windowWidth: 794,
-                backgroundColor: '#ffffff',
-                letterRendering: true  // Better text rendering
-            },
-            jsPDF: {
-                unit: 'mm',
-                format: 'a4',
-                orientation: 'portrait',
-                compress: true
-            },
-            pagebreak: {
-                mode: ['avoid-all', 'css', 'legacy'],
-                before: '.page-break-before'
+const captureArea = overlay.querySelector('#capture-render-area');
+const opt = {
+    margin: [15, 15, 15, 15],  // Equal margins on all sides
+    filename: `عقد_${student.studentName}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: {
+        scale: 2,
+        useCORS: true,
+        logging: true,
+        scrollY: 0,
+        scrollX: 0,
+        width: 794,
+        windowWidth: 794,
+        backgroundColor: '#ffffff',
+        letterRendering: true  // Better text rendering
+    },
+    jsPDF: {
+        unit: 'mm',
+        format: 'a4',
+        orientation: 'portrait',
+        compress: true
+    },
+    pagebreak: {
+        mode: ['avoid-all', 'css', 'legacy'],
+        before: '.page-break-before'
+    }
+};
+
+if (window.html2pdf) {
+    // Delay to ensure all fonts and graphics are PAINTED
+    setTimeout(() => {
+        html2pdf().from(captureArea).set(opt).toPdf().get('pdf').then((pdf) => {
+            const totalPages = pdf.internal.getNumberOfPages();
+            for (let i = 1; i <= totalPages; i++) {
+                pdf.setPage(i);
+                pdf.setDrawColor(30, 58, 138); // #1e3a8a
+                pdf.setLineWidth(0.5);
+                pdf.rect(5, 5, 200, 287);
+                pdf.setLineWidth(1.5);
+                pdf.rect(7, 7, 196, 283);
             }
-        };
+        }).save().then(() => {
+            document.body.removeChild(overlay);
+            this.showNotification('✅ تم تحميل العقد بنجاح');
+        }).catch(err => {
+            console.error("PDF Error:", err);
+            document.body.removeChild(overlay);
+            this.showNotification('❌ حدث خطأ أثناء التحميل');
+            alert("نعتذر، فشل التحميل التلقائي. يرجى تجربة خيار الطباعة.");
+        });
+    }, 3000);
+} else {
+    alert('مكتبة PDF غير محملة. الرجاء تحديث الصفحة.');
+    document.body.removeChild(overlay);
+}
+    },
 
-        if (window.html2pdf) {
-            // Delay to ensure all fonts and graphics are PAINTED
-            setTimeout(() => {
-                html2pdf().from(captureArea).set(opt).toPdf().get('pdf').then((pdf) => {
+    async generateContractPdfBlob(student) {
+    // Similar to downloadContractPdf but returns Blob for ZIP bundling
+    const templateId = student.contractTemplateId;
+    const template = templateId ? contractMgr.getContract(templateId) : contractMgr.getDefaultContract();
+
+    if (template && template.type === 'pdf_template') {
+        const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
+        return new Blob([pdfBytes], { type: 'application/pdf' });
+    }
+
+    // Create temporary container (visible but transparent for proper rendering)
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '0';
+    container.style.top = '0';
+    container.style.width = '794px';
+    container.style.direction = 'rtl';
+    container.style.zIndex = '-9999';
+    container.style.opacity = '0';
+    container.style.pointerEvents = 'none';
+    container.style.background = 'white';
+    container.innerHTML = this.getContractSummaryHTML(student);
+    document.body.appendChild(container);
+
+    const opt = {
+        margin: [15, 15, 15, 15],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            scrollY: 0,
+            scrollX: 0,
+            width: 794,
+            windowWidth: 794,
+            backgroundColor: '#ffffff',
+            letterRendering: true,
+            onclone: function (clonedDoc) {
+                // Ensure cloned content is visible
+                clonedDoc.body.style.visibility = 'visible';
+            }
+        },
+        jsPDF: {
+            unit: 'mm',
+            format: 'a4',
+            orientation: 'portrait',
+            compress: true
+        },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    return new Promise((resolve, reject) => {
+        // Wait for images to load then generate PDF
+        const images = container.querySelectorAll('img');
+        const imagePromises = Array.from(images).map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(r => {
+                img.onload = r;
+                img.onerror = r;
+            });
+        });
+
+        Promise.all(imagePromises).then(() => {
+            // Additional wait for fonts and rendering
+            setTimeout(async () => {
+                try {
+                    const pdf = await html2pdf().from(container).set(opt).toPdf().get('pdf');
+
+                    // Add decorative borders
                     const totalPages = pdf.internal.getNumberOfPages();
                     for (let i = 1; i <= totalPages; i++) {
                         pdf.setPage(i);
-                        pdf.setDrawColor(30, 58, 138); // #1e3a8a
+                        pdf.setDrawColor(30, 58, 138);
                         pdf.setLineWidth(0.5);
                         pdf.rect(5, 5, 200, 287);
                         pdf.setLineWidth(1.5);
                         pdf.rect(7, 7, 196, 283);
                     }
-                }).save().then(() => {
-                    document.body.removeChild(overlay);
-                    this.showNotification('✅ تم تحميل العقد بنجاح');
-                }).catch(err => {
-                    console.error("PDF Error:", err);
-                    document.body.removeChild(overlay);
-                    this.showNotification('❌ حدث خطأ أثناء التحميل');
-                    alert("نعتذر، فشل التحميل التلقائي. يرجى تجربة خيار الطباعة.");
-                });
-            }, 3000);
-        } else {
-            alert('مكتبة PDF غير محملة. الرجاء تحديث الصفحة.');
-            document.body.removeChild(overlay);
-        }
-    },
 
-    async generateContractPdfBlob(student) {
-        // Similar to downloadContractPdf but returns Blob for ZIP bundling
-        const templateId = student.contractTemplateId;
-        const template = templateId ? contractMgr.getContract(templateId) : contractMgr.getDefaultContract();
-
-        if (template && template.type === 'pdf_template') {
-            const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
-            return new Blob([pdfBytes], { type: 'application/pdf' });
-        }
-
-        // Create temporary container (visible but transparent for proper rendering)
-        const container = document.createElement('div');
-        container.style.position = 'fixed';
-        container.style.left = '0';
-        container.style.top = '0';
-        container.style.width = '794px';
-        container.style.direction = 'rtl';
-        container.style.zIndex = '-9999';
-        container.style.opacity = '0';
-        container.style.pointerEvents = 'none';
-        container.style.background = 'white';
-        container.innerHTML = this.getContractSummaryHTML(student);
-        document.body.appendChild(container);
-
-        const opt = {
-            margin: [15, 15, 15, 15],
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: {
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                logging: false,
-                scrollY: 0,
-                scrollX: 0,
-                width: 794,
-                windowWidth: 794,
-                backgroundColor: '#ffffff',
-                letterRendering: true,
-                onclone: function (clonedDoc) {
-                    // Ensure cloned content is visible
-                    clonedDoc.body.style.visibility = 'visible';
+                    const blob = pdf.output('blob');
+                    document.body.removeChild(container);
+                    resolve(blob);
+                } catch (err) {
+                    document.body.removeChild(container);
+                    reject(err);
                 }
-            },
-            jsPDF: {
-                unit: 'mm',
-                format: 'a4',
-                orientation: 'portrait',
-                compress: true
-            },
-            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-        };
-
-        return new Promise((resolve, reject) => {
-            // Wait for images to load then generate PDF
-            const images = container.querySelectorAll('img');
-            const imagePromises = Array.from(images).map(img => {
-                if (img.complete) return Promise.resolve();
-                return new Promise(r => {
-                    img.onload = r;
-                    img.onerror = r;
-                });
-            });
-
-            Promise.all(imagePromises).then(() => {
-                // Additional wait for fonts and rendering
-                setTimeout(async () => {
-                    try {
-                        const pdf = await html2pdf().from(container).set(opt).toPdf().get('pdf');
-
-                        // Add decorative borders
-                        const totalPages = pdf.internal.getNumberOfPages();
-                        for (let i = 1; i <= totalPages; i++) {
-                            pdf.setPage(i);
-                            pdf.setDrawColor(30, 58, 138);
-                            pdf.setLineWidth(0.5);
-                            pdf.rect(5, 5, 200, 287);
-                            pdf.setLineWidth(1.5);
-                            pdf.rect(7, 7, 196, 283);
-                        }
-
-                        const blob = pdf.output('blob');
-                        document.body.removeChild(container);
-                        resolve(blob);
-                    } catch (err) {
-                        document.body.removeChild(container);
-                        reject(err);
-                    }
-                }, 500);
-            });
+            }, 500);
         });
-    },
+    });
+},
 
-    getContractSummaryHTML(student) {
-        const settings = db.getSettings();
-        const stampText = settings.schoolStampText || 'الإدارة';
-        const schoolLogo = settings.schoolLogo || 'assets/logo.png';
-        const schoolPhone = settings.schoolPhone || '---';
-        const hasSignature = !!student.signature;
-        const hasIdImage = !!student.idImage;
-        const contractNo = student.contractNo || 'CON-ADMIN';
+getContractSummaryHTML(student) {
+    const settings = db.getSettings();
+    const stampText = settings.schoolStampText || 'الإدارة';
+    const schoolLogo = settings.schoolLogo || 'assets/logo.png';
+    const schoolPhone = settings.schoolPhone || '---';
+    const hasSignature = !!student.signature;
+    const hasIdImage = !!student.idImage;
+    const contractNo = student.contractNo || 'CON-ADMIN';
 
-        // Fetch Template Content
-        const templateId = student.contractTemplateId;
-        let template = null;
-        if (typeof contractMgr !== 'undefined') {
-            template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
-        } else {
-            const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault);
-        }
+    // Fetch Template Content
+    const templateId = student.contractTemplateId;
+    let template = null;
+    if (typeof contractMgr !== 'undefined') {
+        template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
+    } else {
+        const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+        template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault);
+    }
 
-        let contractContent = 'نص العقد غير متوفر حالياً';
-        let contractTitle = 'عقد تسجيل إلكتروني';
+    let contractContent = 'نص العقد غير متوفر حالياً';
+    let contractTitle = 'عقد تسجيل إلكتروني';
 
-        if (template) {
-            contractTitle = template.title;
-            contractContent = (typeof contractMgr !== 'undefined')
-                ? contractMgr.replaceVariables(template.content, student)
-                : template.content;
-        }
+    if (template) {
+        contractTitle = template.title;
+        contractContent = (typeof contractMgr !== 'undefined')
+            ? contractMgr.replaceVariables(template.content, student)
+            : template.content;
+    }
 
-        const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
+    const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
 
-        const stampHtml = stampImage
-            ? `<div style="text-align:center; position:relative; z-index:5;"><img src="${stampImage}" style="height:110px; width:auto; max-width:150px; opacity:0.85; transform:rotate(-2deg);"></div>`
-            : `<div style="width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:0 auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
+    const stampHtml = stampImage
+        ? `<div style="text-align:center; position:relative; z-index:5;"><img src="${stampImage}" style="height:110px; width:auto; max-width:150px; opacity:0.85; transform:rotate(-2deg);"></div>`
+        : `<div style="width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:0 auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
 
-        const idCardSection = hasIdImage ? `<img src="${student.idImage}" style="max-height:180px; max-width:90%; border:1px solid #ddd; padding:2px; border-radius:4px;">` : '';
+    const idCardSection = hasIdImage ? `<img src="${student.idImage}" style="max-height:180px; max-width:90%; border:1px solid #ddd; padding:2px; border-radius:4px;">` : '';
 
-        return `
+    return `
             <div style="direction:rtl; font-family:'Cairo', sans-serif; background:white; padding:5mm 10mm; width:100%; box-sizing:border-box; color:#1a202c;">
                 <div id="dynamicCustomFieldsContainer" class="form-row" style="flex-wrap: wrap; gap: 1rem;">
                     <!-- Dynamic fields will be inserted here -->
@@ -1287,50 +1312,50 @@ const UI = {
                         </div>
                     </div>
                 </div>`;
-    },
+},
 
     async previewContract(id) {
-        try {
-            const students = db.getStudents();
-            const student = students.find(s => s.id === id);
-            if (!student) throw new Error("الطالب غير موجود");
+    try {
+        const students = db.getStudents();
+        const student = students.find(s => s.id === id);
+        if (!student) throw new Error("الطالب غير موجود");
 
-            const templateId = student.contractTemplateId;
-            let template = (typeof contractMgr !== 'undefined')
-                ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
-                : null;
+        const templateId = student.contractTemplateId;
+        let template = (typeof contractMgr !== 'undefined')
+            ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
+            : null;
 
-            if (!template) {
-                const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
+        if (!template) {
+            const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
+        }
+
+        if (!template) throw new Error("قالب العقد غير موجود");
+
+        // Check for PDF Template (More robust check)
+        const isPdfTemplate = (template && template.type === 'pdf_template') ||
+            (template && template.content && template.content.startsWith('قالب PDF:')) ||
+            (student.contractType === 'pdf_template');
+
+        if (isPdfTemplate) {
+            if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('جاري تحضير المعاينة...');
+            try {
+                const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const blobUrl = window.URL.createObjectURL(blob);
+                window.open(blobUrl, '_blank');
+            } catch (err) {
+                console.error("Preview Error:", err);
+                alert("حدث خطأ أثناء معاينة PDF: " + err.message);
             }
+            return;
+        }
 
-            if (!template) throw new Error("قالب العقد غير موجود");
-
-            // Check for PDF Template (More robust check)
-            const isPdfTemplate = (template && template.type === 'pdf_template') ||
-                (template && template.content && template.content.startsWith('قالب PDF:')) ||
-                (student.contractType === 'pdf_template');
-
-            if (isPdfTemplate) {
-                if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('جاري تحضير المعاينة...');
-                try {
-                    const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
-                    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                    const blobUrl = window.URL.createObjectURL(blob);
-                    window.open(blobUrl, '_blank');
-                } catch (err) {
-                    console.error("Preview Error:", err);
-                    alert("حدث خطأ أثناء معاينة PDF: " + err.message);
-                }
-                return;
-            }
-
-            // Standard HTML Preview
-            const html = this.getContractSummaryHTML(student);
-            const w = window.open('', '_blank');
-            if (w) {
-                w.document.write(`
+        // Standard HTML Preview
+        const html = this.getContractSummaryHTML(student);
+        const w = window.open('', '_blank');
+        if (w) {
+            w.document.write(`
                     <html><head><title>معاينة العقد - ${student.studentName}</title>
                     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
                     <style>
@@ -1347,122 +1372,122 @@ const UI = {
                     </body>
                     </html>
                 `);
-                w.document.close();
-            } else {
-                alert('يرجى السماح بالنوافذ المنبثقة لمعاينة العقد.');
-            }
-        } catch (err) {
-            console.error("Preview Error:", err);
-            alert("حدث خطأ أثناء معاينة العقد: " + err.message);
+            w.document.close();
+        } else {
+            alert('يرجى السماح بالنوافذ المنبثقة لمعاينة العقد.');
         }
-    },
+    } catch (err) {
+        console.error("Preview Error:", err);
+        alert("حدث خطأ أثناء معاينة العقد: " + err.message);
+    }
+},
 
     async downloadContractPdf(id) {
-        try {
-            const students = db.getStudents();
-            const student = students.find(s => s.id === id);
-            if (!student) throw new Error("الطالب غير موجود");
-
-            if (typeof UI.showNotification === 'function') UI.showNotification('جاري تحميل العقد...');
-
-            const templateId = student.contractTemplateId;
-            let template = (typeof contractMgr !== 'undefined')
-                ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
-                : null;
-
-            if (!template) {
-                const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
-            }
-
-            if (!template) throw new Error("قالب العقد غير موجود");
-
-            // Check for PDF Template
-            const isPdfTemplate = (template && template.type === 'pdf_template') ||
-                (template && template.content && template.content.startsWith('قالب PDF:')) ||
-                (student.contractType === 'pdf_template');
-
-            if (isPdfTemplate) {
-                const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
-                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-
-                // Create link and download
-                const link = document.createElement('a');
-                link.href = window.URL.createObjectURL(blob);
-                const dateStr = new Date().toISOString().split('T')[0];
-                link.download = `عقد-${student.studentName}-${dateStr}.pdf`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            } else {
-                // HTML Contract Download (Using html2pdf)
-                const container = document.createElement('div');
-                container.style.position = 'absolute';
-                container.style.left = '-9999px';
-                container.style.width = '210mm'; // A4 width
-                container.style.background = 'white';
-                container.innerHTML = this.getContractSummaryHTML(student);
-                document.body.appendChild(container);
-
-                // Use html2pdf
-                if (typeof html2pdf === 'undefined') {
-                    // Fallback to print
-                    document.body.removeChild(container);
-                    this.previewContract(id);
-                    return;
-                }
-
-                const opt = {
-                    margin: 10,
-                    filename: `عقد-${student.studentName}.pdf`,
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
-                };
-
-                await html2pdf().from(container).set(opt).save();
-                document.body.removeChild(container);
-            }
-
-            if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
-
-        } catch (err) {
-            console.error("Download Error:", err);
-            alert("حدث خطأ أثناء تحميل العقد: " + err.message);
-        }
-    },
-
-    sendContract(id) {
-        // Simple WhatsApp Link
+    try {
         const students = db.getStudents();
-        const student = students.find(s => String(s.id) === String(id));
-        if (!student) {
-            console.warn('Student not found for ID:', id);
-            return;
-        }
+        const student = students.find(s => s.id === id);
+        if (!student) throw new Error("الطالب غير موجود");
 
-        const settings = db.getSettings();
-        let basePath = settings.serverAddress || window.location.href.split('?')[0].replace('index.html', '').replace(/\/$/, '');
+        if (typeof UI.showNotification === 'function') UI.showNotification('جاري تحميل العقد...');
 
-        // Get contract template content
         const templateId = student.contractTemplateId;
-        const template = (typeof contractMgr !== 'undefined')
+        let template = (typeof contractMgr !== 'undefined')
             ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
-            : JSON.parse(localStorage.getItem('contractTemplates') || '[]').find(c => c.id === templateId || c.isDefault);
+            : null;
 
-        // PDF Template links now work via CloudDB sync
-
-        const { link, isLocal, isTooLong } = this.generateContractLink(student);
-
-        if (isLocal) {
-            alert('⚠️ تنبيه: أنت تقوم بإرسال رابط محلي (localhost). هذا الرابط لن يفتح لدى ولي الأمر إلا إذا كان في نفس شبكة الواي فاي أو كان الموقع مرفوعاً على الإنترنت.');
+        if (!template) {
+            const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
         }
 
-        if (isTooLong) {
-            alert('⚠️ تنبيه: نص العقد طويل جداً، قد يتم حظر الرابط من قبل واتساب. يفضل استخدام نص أقصر أو تحميله كـ PDF.');
+        if (!template) throw new Error("قالب العقد غير موجود");
+
+        // Check for PDF Template
+        const isPdfTemplate = (template && template.type === 'pdf_template') ||
+            (template && template.content && template.content.startsWith('قالب PDF:')) ||
+            (student.contractType === 'pdf_template');
+
+        if (isPdfTemplate) {
+            const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+            // Create link and download
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            const dateStr = new Date().toISOString().split('T')[0];
+            link.download = `عقد-${student.studentName}-${dateStr}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else {
+            // HTML Contract Download (Using html2pdf)
+            const container = document.createElement('div');
+            container.style.position = 'absolute';
+            container.style.left = '-9999px';
+            container.style.width = '210mm'; // A4 width
+            container.style.background = 'white';
+            container.innerHTML = this.getContractSummaryHTML(student);
+            document.body.appendChild(container);
+
+            // Use html2pdf
+            if (typeof html2pdf === 'undefined') {
+                // Fallback to print
+                document.body.removeChild(container);
+                this.previewContract(id);
+                return;
+            }
+
+            const opt = {
+                margin: 10,
+                filename: `عقد-${student.studentName}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+            };
+
+            await html2pdf().from(container).set(opt).save();
+            document.body.removeChild(container);
         }
 
-        const msg = `* عقد تسجيل إلكتروني - مدارس دانة العلوم * 📝
+        if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
+
+    } catch (err) {
+        console.error("Download Error:", err);
+        alert("حدث خطأ أثناء تحميل العقد: " + err.message);
+    }
+},
+
+sendContract(id) {
+    // Simple WhatsApp Link
+    const students = db.getStudents();
+    const student = students.find(s => String(s.id) === String(id));
+    if (!student) {
+        console.warn('Student not found for ID:', id);
+        return;
+    }
+
+    const settings = db.getSettings();
+    let basePath = settings.serverAddress || window.location.href.split('?')[0].replace('index.html', '').replace(/\/$/, '');
+
+    // Get contract template content
+    const templateId = student.contractTemplateId;
+    const template = (typeof contractMgr !== 'undefined')
+        ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
+        : JSON.parse(localStorage.getItem('contractTemplates') || '[]').find(c => c.id === templateId || c.isDefault);
+
+    // PDF Template links now work via CloudDB sync
+
+    const { link, isLocal, isTooLong } = this.generateContractLink(student);
+
+    if (isLocal) {
+        alert('⚠️ تنبيه: أنت تقوم بإرسال رابط محلي (localhost). هذا الرابط لن يفتح لدى ولي الأمر إلا إذا كان في نفس شبكة الواي فاي أو كان الموقع مرفوعاً على الإنترنت.');
+    }
+
+    if (isTooLong) {
+        alert('⚠️ تنبيه: نص العقد طويل جداً، قد يتم حظر الرابط من قبل واتساب. يفضل استخدام نص أقصر أو تحميله كـ PDF.');
+    }
+
+    const msg = `* عقد تسجيل إلكتروني - مدارس دانة العلوم * 📝
 
                     مرحباً ${student.parentName || ''},
                     يرجى الاطلاع على عقد التسجيل الخاص بالطالب / ة: * ${student.studentName} *
@@ -1474,314 +1499,314 @@ ${link}
 مع تحيات،
 * مدارس دانة العلوم * `;
 
-        const url = `https://wa.me/${student.parentWhatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
-        window.open(url, '_blank');
+    const url = `https://wa.me/${student.parentWhatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
 
-        // PRESERVE SIGNATURE: Only update to 'sent' if it's currently 'pending'
-        // If it was already 'signed' or 'verified', don't set it back to 'sent'
-        if (student.contractStatus === 'pending') {
-            db.updateStudentStatus(id, 'sent');
-            this.updateStats();
-            this.renderStudents();
+    // PRESERVE SIGNATURE: Only update to 'sent' if it's currently 'pending'
+    // If it was already 'signed' or 'verified', don't set it back to 'sent'
+    if (student.contractStatus === 'pending') {
+        db.updateStudentStatus(id, 'sent');
+        this.updateStats();
+        this.renderStudents();
+    }
+},
+
+editStudent(id) {
+    console.log('📝 Editing student:', id);
+    // Populate modal
+    const students = db.getStudents();
+    const student = students.find(s => String(s.id) === String(id));
+    if (!student) {
+        console.error('❌ Student not found for editing:', id);
+        return;
+    }
+
+    const title = document.getElementById('modalTitle');
+    if (title) title.textContent = 'تعديل بيانات الطالب';
+
+    document.getElementById('studentName').value = student.studentName || '';
+    document.getElementById('parentName').value = student.parentName || '';
+    document.getElementById('studentGrade').value = student.studentGrade || '';
+    document.getElementById('studentLevel').value = student.studentLevel || '';
+    document.getElementById('parentWhatsapp').value = student.parentWhatsapp || '';
+    document.getElementById('parentEmail').value = student.parentEmail || '';
+    if (document.getElementById('explicitNationalId')) {
+        document.getElementById('explicitNationalId').value = student.customFields?.nationalId || '';
+    }
+    if (document.getElementById('parentNationalId')) {
+        document.getElementById('parentNationalId').value = student.customFields?.parentNationalId || '';
+    }
+    if (document.getElementById('studentTrack')) {
+        document.getElementById('studentTrack').value = student.customFields?.studentTrack || student.studentTrack || '';
+    }
+    if (document.getElementById('contractTemplate')) {
+        document.getElementById('contractTemplate').value = student.contractTemplateId || '';
+    }
+
+    // Render Custom Fields
+    this.renderStudentFormFields(student);
+
+    // Mark as editing
+    document.getElementById('studentForm').dataset.editingId = id;
+    this.showModal();
+},
+
+// printContract unused, but maps to download
+printContract(id) { this.downloadContractPdf(id); },
+
+initTheme() {
+    const themeBtn = document.getElementById('themeToggle');
+    if (!themeBtn) return;
+
+    const applyTheme = (isDark) => {
+        if (isDark) {
+            document.body.classList.add('dark-mode');
+            themeBtn.querySelector('.sun').style.display = 'none';
+            themeBtn.querySelector('.moon').style.display = 'block';
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.body.classList.remove('dark-mode');
+            themeBtn.querySelector('.sun').style.display = 'block';
+            themeBtn.querySelector('.moon').style.display = 'none';
+            localStorage.setItem('theme', 'light');
         }
-    },
+    };
 
-    editStudent(id) {
-        console.log('📝 Editing student:', id);
-        // Populate modal
-        const students = db.getStudents();
-        const student = students.find(s => String(s.id) === String(id));
-        if (!student) {
-            console.error('❌ Student not found for editing:', id);
-            return;
-        }
+    // Initial Load
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        applyTheme(true);
+    }
 
-        const title = document.getElementById('modalTitle');
-        if (title) title.textContent = 'تعديل بيانات الطالب';
+    // Toggle Event
+    themeBtn.addEventListener('click', () => {
+        const isDark = document.body.classList.contains('dark-mode');
+        applyTheme(!isDark);
+    });
+},
 
-        document.getElementById('studentName').value = student.studentName || '';
-        document.getElementById('parentName').value = student.parentName || '';
-        document.getElementById('studentGrade').value = student.studentGrade || '';
-        document.getElementById('studentLevel').value = student.studentLevel || '';
-        document.getElementById('parentWhatsapp').value = student.parentWhatsapp || '';
-        document.getElementById('parentEmail').value = student.parentEmail || '';
-        if (document.getElementById('explicitNationalId')) {
-            document.getElementById('explicitNationalId').value = student.customFields?.nationalId || '';
-        }
-        if (document.getElementById('parentNationalId')) {
-            document.getElementById('parentNationalId').value = student.customFields?.parentNationalId || '';
-        }
-        if (document.getElementById('studentTrack')) {
-            document.getElementById('studentTrack').value = student.customFields?.studentTrack || student.studentTrack || '';
-        }
-        if (document.getElementById('contractTemplate')) {
-            document.getElementById('contractTemplate').value = student.contractTemplateId || '';
-        }
+applyBranding() {
+    const settings = db.getSettings();
+    const logo = settings.schoolLogo || 'assets/logo.png';
+    if (document.getElementById('navLogo')) document.getElementById('navLogo').src = logo;
+    if (document.getElementById('settingsLogoPreview')) document.getElementById('settingsLogoPreview').src = logo;
+    if (document.getElementById('loginLogo')) document.getElementById('loginLogo').src = logo;
+},
 
-        // Render Custom Fields
-        this.renderStudentFormFields(student);
+saveSettings() {
+    const stampText = document.getElementById('schoolStampInput')?.value || '';
+    const schoolName = document.getElementById('schoolName')?.value || '';
+    const schoolPhone = document.getElementById('schoolPhone')?.value || '';
+    const serverAddr = document.getElementById('serverAddress')?.value || '';
 
-        // Mark as editing
-        document.getElementById('studentForm').dataset.editingId = id;
-        this.showModal();
-    },
+    // Chip Inputs (synced to hidden textareas by renderChips)
+    const levels = (document.getElementById('schoolLevelsInput')?.value || '').split(',').map(s => s.trim()).filter(s => s);
+    const grades = (document.getElementById('schoolGradesInput')?.value || '').split(',').map(s => s.trim()).filter(s => s);
 
-    // printContract unused, but maps to download
-    printContract(id) { this.downloadContractPdf(id); },
+    // Custom Fields
+    const customFieldsRaw = document.getElementById('customFieldsSetting')?.value || '[]';
+    let customFields = [];
+    try { customFields = JSON.parse(customFieldsRaw); } catch (e) { customFields = []; }
 
-    initTheme() {
-        const themeBtn = document.getElementById('themeToggle');
-        if (!themeBtn) return;
+    const logo = document.getElementById('settingsLogoPreview')?.src || '';
 
-        const applyTheme = (isDark) => {
-            if (isDark) {
-                document.body.classList.add('dark-mode');
-                themeBtn.querySelector('.sun').style.display = 'none';
-                themeBtn.querySelector('.moon').style.display = 'block';
-                localStorage.setItem('theme', 'dark');
-            } else {
-                document.body.classList.remove('dark-mode');
-                themeBtn.querySelector('.sun').style.display = 'block';
-                themeBtn.querySelector('.moon').style.display = 'none';
-                localStorage.setItem('theme', 'light');
+    // Stamp Image
+    const stampPreviewImg = document.querySelector('.school-stamp img');
+    const stampImage = stampPreviewImg ? stampPreviewImg.src : '';
+
+    // Security
+    const adminUser = document.getElementById('adminUsernameSetting')?.value;
+    const adminPass = document.getElementById('adminPassSetting')?.value;
+
+    const currentSettings = db.getSettings();
+
+    // Safe capture of contract IDs (don't overwrite with null if element is missing)
+    const nationalEl = document.getElementById('nationalContractSetting');
+    const diplomaEl = document.getElementById('diplomaContractSetting');
+
+    const settings = {
+        ...currentSettings,
+        schoolName,
+        schoolStampText: stampText,
+        schoolPhone,
+        serverAddress: serverAddr,
+        levels,
+        grades,
+        customFields,
+        schoolLogo: logo.startsWith('data:') ? logo : (currentSettings.schoolLogo || ''),
+        stampImage: stampImage.startsWith('data:') ? stampImage : (currentSettings.stampImage || ''),
+        nationalContractId: (nationalEl && nationalEl.value) ? nationalEl.value : currentSettings.nationalContractId,
+        diplomaContractId: (diplomaEl && diplomaEl.value) ? diplomaEl.value : currentSettings.diplomaContractId
+    };
+
+    if (adminUser) settings.adminUsername = adminUser;
+    if (adminPass) settings.adminPassword = adminPass;
+
+    db.saveSettings(settings);
+    this.applyBranding();
+    this.populateDynamicSelects();
+
+    // Sync to cloud if possible
+    if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+        CloudDB.saveSettings(settings);
+    }
+
+    this.showNotification('✅ تم حفظ جميع الإعدادات بنجاح');
+
+    // Clear password field for security
+    if (document.getElementById('adminPassSetting')) document.getElementById('adminPassSetting').value = '';
+},
+
+handleLogoUpload(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const img = document.getElementById('settingsLogoPreview');
+            if (img) img.src = e.target.result;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+},
+
+handleStampUpload(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const previewContainer = document.querySelector('.school-stamp');
+            if (previewContainer) {
+                previewContainer.innerHTML = `<img src="${e.target.result}" style="width:100%; height:100%; object-fit:contain; border-radius:50%; position:absolute; top:0; left:0; z-index:10;">`;
             }
         };
+        reader.readAsDataURL(input.files[0]);
+    }
+},
 
-        // Initial Load
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark') {
-            applyTheme(true);
-        }
+updateStampPreview() {
+    const text = document.getElementById('schoolStampInput').value;
+    const previewContainer = document.querySelector('.school-stamp');
 
-        // Toggle Event
-        themeBtn.addEventListener('click', () => {
-            const isDark = document.body.classList.contains('dark-mode');
-            applyTheme(!isDark);
-        });
-    },
-
-    applyBranding() {
-        const settings = db.getSettings();
-        const logo = settings.schoolLogo || 'assets/logo.png';
-        if (document.getElementById('navLogo')) document.getElementById('navLogo').src = logo;
-        if (document.getElementById('settingsLogoPreview')) document.getElementById('settingsLogoPreview').src = logo;
-        if (document.getElementById('loginLogo')) document.getElementById('loginLogo').src = logo;
-    },
-
-    saveSettings() {
-        const stampText = document.getElementById('schoolStampInput')?.value || '';
-        const schoolName = document.getElementById('schoolName')?.value || '';
-        const schoolPhone = document.getElementById('schoolPhone')?.value || '';
-        const serverAddr = document.getElementById('serverAddress')?.value || '';
-
-        // Chip Inputs (synced to hidden textareas by renderChips)
-        const levels = (document.getElementById('schoolLevelsInput')?.value || '').split(',').map(s => s.trim()).filter(s => s);
-        const grades = (document.getElementById('schoolGradesInput')?.value || '').split(',').map(s => s.trim()).filter(s => s);
-
-        // Custom Fields
-        const customFieldsRaw = document.getElementById('customFieldsSetting')?.value || '[]';
-        let customFields = [];
-        try { customFields = JSON.parse(customFieldsRaw); } catch (e) { customFields = []; }
-
-        const logo = document.getElementById('settingsLogoPreview')?.src || '';
-
-        // Stamp Image
-        const stampPreviewImg = document.querySelector('.school-stamp img');
-        const stampImage = stampPreviewImg ? stampPreviewImg.src : '';
-
-        // Security
-        const adminUser = document.getElementById('adminUsernameSetting')?.value;
-        const adminPass = document.getElementById('adminPassSetting')?.value;
-
-        const currentSettings = db.getSettings();
-
-        // Safe capture of contract IDs (don't overwrite with null if element is missing)
-        const nationalEl = document.getElementById('nationalContractSetting');
-        const diplomaEl = document.getElementById('diplomaContractSetting');
-
-        const settings = {
-            ...currentSettings,
-            schoolName,
-            schoolStampText: stampText,
-            schoolPhone,
-            serverAddress: serverAddr,
-            levels,
-            grades,
-            customFields,
-            schoolLogo: logo.startsWith('data:') ? logo : (currentSettings.schoolLogo || ''),
-            stampImage: stampImage.startsWith('data:') ? stampImage : (currentSettings.stampImage || ''),
-            nationalContractId: (nationalEl && nationalEl.value) ? nationalEl.value : currentSettings.nationalContractId,
-            diplomaContractId: (diplomaEl && diplomaEl.value) ? diplomaEl.value : currentSettings.diplomaContractId
-        };
-
-        if (adminUser) settings.adminUsername = adminUser;
-        if (adminPass) settings.adminPassword = adminPass;
-
-        db.saveSettings(settings);
-        this.applyBranding();
-        this.populateDynamicSelects();
-
-        // Sync to cloud if possible
-        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            CloudDB.saveSettings(settings);
-        }
-
-        this.showNotification('✅ تم حفظ جميع الإعدادات بنجاح');
-
-        // Clear password field for security
-        if (document.getElementById('adminPassSetting')) document.getElementById('adminPassSetting').value = '';
-    },
-
-    handleLogoUpload(input) {
-        if (input.files && input.files[0]) {
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                const img = document.getElementById('settingsLogoPreview');
-                if (img) img.src = e.target.result;
-            };
-            reader.readAsDataURL(input.files[0]);
-        }
-    },
-
-    handleStampUpload(input) {
-        if (input.files && input.files[0]) {
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                const previewContainer = document.querySelector('.school-stamp');
-                if (previewContainer) {
-                    previewContainer.innerHTML = `<img src="${e.target.result}" style="width:100%; height:100%; object-fit:contain; border-radius:50%; position:absolute; top:0; left:0; z-index:10;">`;
-                }
-            };
-            reader.readAsDataURL(input.files[0]);
-        }
-    },
-
-    updateStampPreview() {
-        const text = document.getElementById('schoolStampInput').value;
-        const previewContainer = document.querySelector('.school-stamp');
-
-        // If image exists, don't revert to text unless user clears image (which needs a reload or clear button)
-        // For now, simpler is better: if there is an IMG tag, keep it. If not, update text.
-        if (previewContainer && !previewContainer.querySelector('img')) {
-            const previewText = document.getElementById('stampPreviewText'); // This ID existed in original HTML
-            if (previewText) previewText.textContent = text || 'الإدارة';
-            else {
-                // Re-create text structure if lost
-                previewContainer.innerHTML = `
+    // If image exists, don't revert to text unless user clears image (which needs a reload or clear button)
+    // For now, simpler is better: if there is an IMG tag, keep it. If not, update text.
+    if (previewContainer && !previewContainer.querySelector('img')) {
+        const previewText = document.getElementById('stampPreviewText'); // This ID existed in original HTML
+        if (previewText) previewText.textContent = text || 'الإدارة';
+        else {
+            // Re-create text structure if lost
+            previewContainer.innerHTML = `
                     <div style="position: absolute; width: 90%; height: 90%; border: 1px solid var(--primary-main); border-radius: 50%;"></div>
                     <div id="stampPreviewText" style="font-size: 1rem; text-align: center; max-width: 80%; line-height: 1.2;">${text || 'الإدارة'}</div>
                  `;
-            }
         }
-    },
+    }
+},
 
-    // --- New Settings UI Functions ---
-    switchSettingsTab(tabId) {
-        // Update Buttons
-        const buttons = document.querySelectorAll('.tab-btn');
-        buttons.forEach(btn => btn.classList.remove('active'));
-        const activeBtn = Array.from(buttons).find(btn => btn.getAttribute('onclick')?.includes(tabId));
-        if (activeBtn) activeBtn.classList.add('active');
+// --- New Settings UI Functions ---
+switchSettingsTab(tabId) {
+    // Update Buttons
+    const buttons = document.querySelectorAll('.tab-btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    const activeBtn = Array.from(buttons).find(btn => btn.getAttribute('onclick')?.includes(tabId));
+    if (activeBtn) activeBtn.classList.add('active');
 
-        // Hide all contents
-        const contents = document.querySelectorAll('.tab-content');
-        contents.forEach(content => {
-            content.classList.remove('active');
-            content.style.setProperty('display', 'none', 'important');
-        });
+    // Hide all contents
+    const contents = document.querySelectorAll('.tab-content');
+    contents.forEach(content => {
+        content.classList.remove('active');
+        content.style.setProperty('display', 'none', 'important');
+    });
 
-        // Resolve Content ID
-        let content = document.getElementById(`tab-${tabId}`) || document.getElementById(tabId);
+    // Resolve Content ID
+    let content = document.getElementById(`tab-${tabId}`) || document.getElementById(tabId);
 
-        // Fallback: Try mapping common names 
-        if (!content) {
-            const map = {
-                'security': 'tab-account', 'account': 'tab-security',
-                'backup': 'tab-system', 'system': 'tab-backup'
-            };
-            if (map[tabId]) content = document.getElementById(map[tabId]);
-        }
+    // Fallback: Try mapping common names 
+    if (!content) {
+        const map = {
+            'security': 'tab-account', 'account': 'tab-security',
+            'backup': 'tab-system', 'system': 'tab-backup'
+        };
+        if (map[tabId]) content = document.getElementById(map[tabId]);
+    }
 
-        if (content) {
-            content.classList.add('active');
-            content.style.setProperty('display', 'block', 'important');
-        } else {
-            console.warn(`Tab content not found for ID: ${tabId}`);
-        }
-    },
+    if (content) {
+        content.classList.add('active');
+        content.style.setProperty('display', 'block', 'important');
+    } else {
+        console.warn(`Tab content not found for ID: ${tabId}`);
+    }
+},
 
-    // Chip Management
-    addChip(storageId, inputId) {
-        const input = document.getElementById(inputId);
-        const val = input.value.trim();
-        if (!val) return;
+// Chip Management
+addChip(storageId, inputId) {
+    const input = document.getElementById(inputId);
+    const val = input.value.trim();
+    if (!val) return;
 
-        const currentVal = document.getElementById(storageId).value;
-        const items = currentVal ? currentVal.split(',') : [];
-        if (!items.includes(val)) {
-            items.push(val);
-            this.renderChips(storageId, items);
-            input.value = '';
-        }
-    },
-
-    removeChip(storageId, value) {
-        const currentVal = document.getElementById(storageId).value;
-        let items = currentVal ? currentVal.split(',') : [];
-        items = items.filter(i => i !== value);
+    const currentVal = document.getElementById(storageId).value;
+    const items = currentVal ? currentVal.split(',') : [];
+    if (!items.includes(val)) {
+        items.push(val);
         this.renderChips(storageId, items);
-    },
+        input.value = '';
+    }
+},
 
-    renderChips(storageId, items) {
-        // Sync to hidden input
-        document.getElementById(storageId).value = items.join(',');
+removeChip(storageId, value) {
+    const currentVal = document.getElementById(storageId).value;
+    let items = currentVal ? currentVal.split(',') : [];
+    items = items.filter(i => i !== value);
+    this.renderChips(storageId, items);
+},
 
-        // Render UI
-        const containerId = storageId === 'schoolLevelsInput' ? 'levelsChips' : 'gradesChips';
-        const container = document.getElementById(containerId);
-        if (!container) return;
+renderChips(storageId, items) {
+    // Sync to hidden input
+    document.getElementById(storageId).value = items.join(',');
 
-        container.innerHTML = items.length ? items.map(item => `
+    // Render UI
+    const containerId = storageId === 'schoolLevelsInput' ? 'levelsChips' : 'gradesChips';
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = items.length ? items.map(item => `
             <div class="chip">
                 ${item}
                 <button onclick="UI.removeChip('${storageId}', '${item}')">&times;</button>
             </div>
         `).join('') : '<div class="chip-empty">لا توجد عناصر مضافة</div>';
-    },
+},
 
-    // Custom Fields Management
-    addCustomField() {
-        const label = document.getElementById('newFieldLabel')?.value.trim();
-        const type = document.getElementById('newFieldType')?.value;
-        if (!label) return;
+// Custom Fields Management
+addCustomField() {
+    const label = document.getElementById('newFieldLabel')?.value.trim();
+    const type = document.getElementById('newFieldType')?.value;
+    if (!label) return;
 
-        const hiddenInput = document.getElementById('customFieldsSetting');
-        let fields = [];
-        try { fields = JSON.parse(hiddenInput.value || '[]'); } catch (e) { }
+    const hiddenInput = document.getElementById('customFieldsSetting');
+    let fields = [];
+    try { fields = JSON.parse(hiddenInput.value || '[]'); } catch (e) { }
 
-        fields.push({ id: Date.now(), label, type });
-        this.renderCustomFields(fields);
+    fields.push({ id: Date.now(), label, type });
+    this.renderCustomFields(fields);
 
-        document.getElementById('newFieldLabel').value = '';
-    },
+    document.getElementById('newFieldLabel').value = '';
+},
 
-    deleteCustomField(id) {
-        const hiddenInput = document.getElementById('customFieldsSetting');
-        let fields = [];
-        try { fields = JSON.parse(hiddenInput.value || '[]'); } catch (e) { }
+deleteCustomField(id) {
+    const hiddenInput = document.getElementById('customFieldsSetting');
+    let fields = [];
+    try { fields = JSON.parse(hiddenInput.value || '[]'); } catch (e) { }
 
-        fields = fields.filter(f => f.id !== id);
-        this.renderCustomFields(fields);
-    },
+    fields = fields.filter(f => f.id !== id);
+    this.renderCustomFields(fields);
+},
 
-    renderCustomFields(fields) {
-        const hiddenInput = document.getElementById('customFieldsSetting');
-        hiddenInput.value = JSON.stringify(fields);
+renderCustomFields(fields) {
+    const hiddenInput = document.getElementById('customFieldsSetting');
+    hiddenInput.value = JSON.stringify(fields);
 
-        const container = document.getElementById('customFieldsList');
-        if (!container) return;
+    const container = document.getElementById('customFieldsList');
+    if (!container) return;
 
-        container.innerHTML = fields.length ? fields.map(f => `
+    container.innerHTML = fields.length ? fields.map(f => `
             <div class="custom-field-item">
                 <div class="custom-field-info">
                     <span class="custom-field-label">${f.label}</span>
@@ -1793,755 +1818,804 @@ ${link}
             </div>
         `).join('') : '<div class="chip-empty">لا توجد حقول إضافية</div>';
 
-        // Also update the form in the modal dynamically if open? 
-        // Better to handle that in openModal
-    },
+    // Also update the form in the modal dynamically if open? 
+    // Better to handle that in openModal
+},
 
-    renderStudentFormFields(student = null) {
-        const container = document.getElementById('dynamicCustomFieldsContainer');
-        if (!container) return;
+renderStudentFormFields(student = null) {
+    const container = document.getElementById('dynamicCustomFieldsContainer');
+    if (!container) return;
 
-        const settings = db.getSettings();
-        // Filter out 'nationalId' because it is now hardcoded in the form
-        const fields = (settings.customFields || []).filter(f => f.id !== 'nationalId' && f.id !== 'parentNationalId');
+    const settings = db.getSettings();
+    // Filter out 'nationalId' because it is now hardcoded in the form
+    const fields = (settings.customFields || []).filter(f => f.id !== 'nationalId' && f.id !== 'parentNationalId');
 
-        container.innerHTML = fields.map(f => {
-            const val = student?.customFields?.[f.id] || '';
-            let inputHtml = '';
+    container.innerHTML = fields.map(f => {
+        const val = student?.customFields?.[f.id] || '';
+        let inputHtml = '';
 
-            if (f.type === 'text') {
-                inputHtml = `<input type="text" id="custom_${f.id}" value="${val}" placeholder="${f.label}" style="width: 100%; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px;">`;
-            } else if (f.type === 'number') {
-                inputHtml = `<input type="number" id="custom_${f.id}" value="${val}" placeholder="${f.label}" style="width: 100%; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px;">`;
-            } else if (f.type === 'date') {
-                inputHtml = `<input type="date" id="custom_${f.id}" value="${val}" style="width: 100%; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px;">`;
-            }
+        if (f.type === 'text') {
+            inputHtml = `<input type="text" id="custom_${f.id}" value="${val}" placeholder="${f.label}" style="width: 100%; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px;">`;
+        } else if (f.type === 'number') {
+            inputHtml = `<input type="number" id="custom_${f.id}" value="${val}" placeholder="${f.label}" style="width: 100%; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px;">`;
+        } else if (f.type === 'date') {
+            inputHtml = `<input type="date" id="custom_${f.id}" value="${val}" style="width: 100%; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px;">`;
+        }
 
-            return `
+        return `
                 <div class="form-group" style="flex: 1 1 45%; min-width: 250px;">
                     <label for="custom_${f.id}" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #4a5568;">${f.label}</label>
                     ${inputHtml}
                 </div>
             `;
-        }).join('');
-    },
+    }).join('');
+},
 
-    handleLogoUpload(input) {
-        if (input.files && input.files[0]) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const preview = document.getElementById('settingsLogoPreview');
-                if (preview) preview.src = e.target.result;
-            };
-            reader.readAsDataURL(input.files[0]);
-        }
-    },
+handleLogoUpload(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const preview = document.getElementById('settingsLogoPreview');
+            if (preview) preview.src = e.target.result;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+},
 
-    updateStampPreview() {
-        const input = document.getElementById('schoolStampInput');
-        const preview = document.getElementById('stampPreviewText');
-        if (input && preview) {
-            preview.textContent = input.value || 'الإدارة';
-        }
-    },
+updateStampPreview() {
+    const input = document.getElementById('schoolStampInput');
+    const preview = document.getElementById('stampPreviewText');
+    if (input && preview) {
+        preview.textContent = input.value || 'الإدارة';
+    }
+},
 
-    populateDynamicSelects() {
+populateDynamicSelects() {
+    const settings = db.getSettings();
+
+    const levelOptions = (settings.levels || []).map(l => `<option value="${l}">${l}</option>`).join('');
+    const gradeOptions = (settings.grades || []).map(g => `<option value="${g}">${g}</option>`).join('');
+
+    // Populate form and filter dropdowns
+    const levelSelects = [document.getElementById('studentLevel'), document.getElementById('filterLevel')];
+    const gradeSelects = [document.getElementById('studentGrade'), document.getElementById('filterGrade')];
+
+    levelSelects.forEach(sel => {
+        if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'المرحلة: الكل' : 'اختر المرحلة'}</option>` + levelOptions;
+    });
+    gradeSelects.forEach(sel => {
+        if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'الصف: الكل' : 'اختر الصف'}</option>` + gradeOptions;
+    });
+
+    // Populate Contract Templates
+    const contractSelects = [
+        document.getElementById('contractTemplate'),
+        document.getElementById('nationalContractSetting'),
+        document.getElementById('diplomaContractSetting')
+    ];
+    if (typeof contractMgr !== 'undefined') {
+        const templates = contractMgr.getContracts();
+        const contractOptions = templates.map(t => `<option value="${t.id}">${t.title}</option>`).join('');
+        contractSelects.forEach(sel => {
+            if (sel) sel.innerHTML = '<option value="">-- اختر العقد --</option>' + contractOptions;
+        });
+    }
+},
+
+loadSettingsPage() {
+    try {
+        this.populateDynamicSelects(); // Ensure dropdowns are populated first!
         const settings = db.getSettings();
 
-        const levelOptions = (settings.levels || []).map(l => `<option value="${l}">${l}</option>`).join('');
-        const gradeOptions = (settings.grades || []).map(g => `<option value="${g}">${g}</option>`).join('');
+        // Text Inputs
+        if (document.getElementById('schoolName')) document.getElementById('schoolName').value = settings.schoolName || '';
+        if (document.getElementById('schoolStampInput')) document.getElementById('schoolStampInput').value = settings.schoolStampText || '';
+        if (document.getElementById('serverAddress')) document.getElementById('serverAddress').value = settings.serverAddress || '';
+        if (document.getElementById('schoolPhone')) document.getElementById('schoolPhone').value = settings.schoolPhone || '';
+        if (document.getElementById('adminUsernameSetting')) document.getElementById('adminUsernameSetting').value = settings.adminUsername || 'admin';
 
-        // Populate form and filter dropdowns
-        const levelSelects = [document.getElementById('studentLevel'), document.getElementById('filterLevel')];
-        const gradeSelects = [document.getElementById('studentGrade'), document.getElementById('filterGrade')];
+        // Load contract assignment settings
+        if (document.getElementById('nationalContractSetting')) document.getElementById('nationalContractSetting').value = settings.nationalContractId || '';
+        if (document.getElementById('diplomaContractSetting')) document.getElementById('diplomaContractSetting').value = settings.diplomaContractId || '';
 
-        levelSelects.forEach(sel => {
-            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'المرحلة: الكل' : 'اختر المرحلة'}</option>` + levelOptions;
-        });
-        gradeSelects.forEach(sel => {
-            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'الصف: الكل' : 'اختر الصف'}</option>` + gradeOptions;
-        });
-
-        // Populate Contract Templates
-        const contractSelects = [
-            document.getElementById('contractTemplate'),
-            document.getElementById('nationalContractSetting'),
-            document.getElementById('diplomaContractSetting')
-        ];
-        if (typeof contractMgr !== 'undefined') {
-            const templates = contractMgr.getContracts();
-            const contractOptions = templates.map(t => `<option value="${t.id}">${t.title}</option>`).join('');
-            contractSelects.forEach(sel => {
-                if (sel) sel.innerHTML = '<option value="">-- اختر العقد --</option>' + contractOptions;
-            });
-        }
-    },
-
-    loadSettingsPage() {
-        try {
-            this.populateDynamicSelects(); // Ensure dropdowns are populated first!
-            const settings = db.getSettings();
-
-            // Text Inputs
-            if (document.getElementById('schoolName')) document.getElementById('schoolName').value = settings.schoolName || '';
-            if (document.getElementById('schoolStampInput')) document.getElementById('schoolStampInput').value = settings.schoolStampText || '';
-            if (document.getElementById('serverAddress')) document.getElementById('serverAddress').value = settings.serverAddress || '';
-            if (document.getElementById('schoolPhone')) document.getElementById('schoolPhone').value = settings.schoolPhone || '';
-            if (document.getElementById('adminUsernameSetting')) document.getElementById('adminUsernameSetting').value = settings.adminUsername || 'admin';
-
-            // Load contract assignment settings
-            if (document.getElementById('nationalContractSetting')) document.getElementById('nationalContractSetting').value = settings.nationalContractId || '';
-            if (document.getElementById('diplomaContractSetting')) document.getElementById('diplomaContractSetting').value = settings.diplomaContractId || '';
-
-            // Logo
-            if (document.getElementById('settingsLogoPreview') && settings.schoolLogo) {
-                document.getElementById('settingsLogoPreview').src = settings.schoolLogo;
-            }
-
-            // Stamp Image
-            if (settings.stampImage) {
-                const previewContainer = document.querySelector('.school-stamp');
-                if (previewContainer) {
-                    previewContainer.innerHTML = `<img src="${settings.stampImage}" style="width:100%; height:100%; object-fit:contain; border-radius:50%; position:absolute; top:0; left:0; z-index:10;">`;
-                }
-            }
-
-            // Chips & Lists
-            this.renderChips('schoolLevelsInput', settings.levels || []);
-            this.renderChips('schoolGradesInput', settings.grades || []);
-            this.renderCustomFields(settings.customFields || []);
-
-            this.updateStampPreview();
-
-            // Switch to General tab by default if no active tab
-            if (!document.querySelector('.tab-content.active')) {
-                this.switchSettingsTab('general');
-            }
-        } catch (e) {
-            console.error('Error loading settings page:', e);
-        }
-    },
-
-    remindParent(id) {
-        const student = db.getStudents().find(s => s.id === id);
-        if (!student) return;
-
-        const phone = student.parentWhatsapp.replace(/[^0-9]/g, '');
-        if (!phone) {
-            this.showNotification('❌ لا يوجد رقم واتساب مسجل');
-            return;
+        // Logo
+        if (document.getElementById('settingsLogoPreview') && settings.schoolLogo) {
+            document.getElementById('settingsLogoPreview').src = settings.schoolLogo;
         }
 
-        const settings = db.getSettings();
-        const baseUrl = settings.serverAddress || window.location.origin;
-        // Construct Link
-        const link = `${baseUrl}/contract.html?d=${this.generateContractLink(student)}`;
-
-        const message = `تذكير: مرحباً ${student.parentName}،%0a%0aنرجو التكرم بتوقيع عقد الطالب *${student.studentName}* لاستكمال إجراءات التسجيل.%0a%0aرابط العقد:%0a${encodeURIComponent(link)}`;
-
-        window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
-        db.updateStudentStatus(id, 'sent'); // Update last sent time effectively
-        this.showNotification('✅ تم فتح واتساب لإرسال التذكير');
-    },
-
-    applyFilters() {
-        const searchDash = document.getElementById('studentSearch')?.value.toLowerCase() || '';
-        const searchAll = document.getElementById('studentSearchAll')?.value.toLowerCase() || '';
-        const searchTerm = searchDash || searchAll;
-
-        const levelTerm = document.getElementById('filterLevel')?.value || '';
-        const gradeTerm = document.getElementById('filterGrade')?.value || '';
-
-        const students = db.getStudents().filter(s => {
-            const matchesSearch = !searchTerm ||
-                (s.studentName || '').toLowerCase().includes(searchTerm) ||
-                (s.parentWhatsapp || '').includes(searchTerm) ||
-                (s.parentEmail || '').toLowerCase().includes(searchTerm) ||
-                (s.parentName || '').toLowerCase().includes(searchTerm);
-
-            const matchesLevel = !levelTerm || s.studentLevel === levelTerm;
-            const matchesGrade = !gradeTerm || s.studentGrade === gradeTerm;
-
-            return matchesSearch && matchesLevel && matchesGrade;
-        });
-
-        // Apply Current Sort
-        this.sortAndRender(students);
-    },
-
-    sortStudents(field) {
-        if (this.currentSort.field === field) {
-            this.currentSort.order = this.currentSort.order === 'asc' ? 'desc' : 'asc';
-        } else {
-            this.currentSort.field = field;
-            this.currentSort.order = 'asc';
-        }
-        this.applyFilters();
-    },
-
-    sortAndRender(students) {
-        const field = this.currentSort.field;
-        const order = this.currentSort.order === 'asc' ? 1 : -1;
-
-        students.sort((a, b) => {
-            let valA = a[field] || '';
-            let valB = b[field] || '';
-
-            if (field === 'createdAt') {
-                return (new Date(valA) - new Date(valB)) * order;
+        // Stamp Image
+        if (settings.stampImage) {
+            const previewContainer = document.querySelector('.school-stamp');
+            if (previewContainer) {
+                previewContainer.innerHTML = `<img src="${settings.stampImage}" style="width:100%; height:100%; object-fit:contain; border-radius:50%; position:absolute; top:0; left:0; z-index:10;">`;
             }
+        }
 
-            return String(valA).localeCompare(String(valB), 'ar') * order;
-        });
+        // Chips & Lists
+        this.renderChips('schoolLevelsInput', settings.levels || []);
+        this.renderChips('schoolGradesInput', settings.grades || []);
+        this.renderCustomFields(settings.customFields || []);
 
-        this.renderStudents(students);
-    },
+        this.updateStampPreview();
 
-    // --- Bulk Actions Queue System ---
-    bulkQueue: [],
+        // Switch to General tab by default if no active tab
+        if (!document.querySelector('.tab-content.active')) {
+            this.switchSettingsTab('general');
+        }
+    } catch (e) {
+        console.error('Error loading settings page:', e);
+    }
+},
+
+remindParent(id) {
+    const student = db.getStudents().find(s => s.id === id);
+    if (!student) return;
+
+    const phone = student.parentWhatsapp.replace(/[^0-9]/g, '');
+    if (!phone) {
+        this.showNotification('❌ لا يوجد رقم واتساب مسجل');
+        return;
+    }
+
+    const settings = db.getSettings();
+    const baseUrl = settings.serverAddress || window.location.origin;
+    // Construct Link
+    const link = `${baseUrl}/contract.html?d=${this.generateContractLink(student)}`;
+
+    const message = `تذكير: مرحباً ${student.parentName}،%0a%0aنرجو التكرم بتوقيع عقد الطالب *${student.studentName}* لاستكمال إجراءات التسجيل.%0a%0aرابط العقد:%0a${encodeURIComponent(link)}`;
+
+    window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+    db.updateStudentStatus(id, 'sent'); // Update last sent time effectively
+    this.showNotification('✅ تم فتح واتساب لإرسال التذكير');
+},
+
+applyFilters() {
+    const searchDash = document.getElementById('studentSearch')?.value.toLowerCase() || '';
+    const searchAll = document.getElementById('studentSearchAll')?.value.toLowerCase() || '';
+    const searchTerm = searchDash || searchAll;
+
+    const levelTerm = document.getElementById('filterLevel')?.value || '';
+    const gradeTerm = document.getElementById('filterGrade')?.value || '';
+
+    const students = db.getStudents().filter(s => {
+        const matchesSearch = !searchTerm ||
+            (s.studentName || '').toLowerCase().includes(searchTerm) ||
+            (s.parentWhatsapp || '').includes(searchTerm) ||
+            (s.parentEmail || '').toLowerCase().includes(searchTerm) ||
+            (s.parentName || '').toLowerCase().includes(searchTerm);
+
+        const matchesLevel = !levelTerm || s.studentLevel === levelTerm;
+        const matchesGrade = !gradeTerm || s.studentGrade === gradeTerm;
+
+        return matchesSearch && matchesLevel && matchesGrade;
+    });
+
+    // Apply Current Sort
+    this.sortAndRender(students);
+},
+
+sortStudents(field) {
+    if (this.currentSort.field === field) {
+        this.currentSort.order = this.currentSort.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        this.currentSort.field = field;
+        this.currentSort.order = 'asc';
+    }
+    this.applyFilters();
+},
+
+sortAndRender(students) {
+    const field = this.currentSort.field;
+    const order = this.currentSort.order === 'asc' ? 1 : -1;
+
+    students.sort((a, b) => {
+        let valA = a[field] || '';
+        let valB = b[field] || '';
+
+        if (field === 'createdAt') {
+            return (new Date(valA) - new Date(valB)) * order;
+        }
+
+        return String(valA).localeCompare(String(valB), 'ar') * order;
+    });
+
+    this.renderStudents(students);
+},
+
+// --- Bulk Actions Queue System ---
+bulkQueue: [],
     bulkQueueIndex: 0,
-    bulkActionType: '', // 'send' or 'remind'
+        bulkActionType: '', // 'send' or 'remind'
 
-    startBulkAction(type) {
-        const checks = document.querySelectorAll('#allStudentsTableBody .student-checkbox:checked');
-        if (checks.length === 0) {
-            this.showNotification('⚠️ الرجاء اختيار طلاب أولاً');
-            return;
-        }
+            startBulkAction(type) {
+    const checks = document.querySelectorAll('#allStudentsTableBody .student-checkbox:checked');
+    if (checks.length === 0) {
+        this.showNotification('⚠️ الرجاء اختيار طلاب أولاً');
+        return;
+    }
 
-        const ids = Array.from(checks).map(c => c.value);
-        this.bulkQueue = ids;
-        this.bulkQueueIndex = 0;
-        this.bulkActionType = type;
+    const ids = Array.from(checks).map(c => c.value);
+    this.bulkQueue = ids;
+    this.bulkQueueIndex = 0;
+    this.bulkActionType = type;
 
-        // Reset UI
-        document.getElementById('bulkQueueModal').style.display = 'block';
-        document.getElementById('bulkQueueActions').style.display = 'block';
-        document.getElementById('bulkQueueComplete').style.display = 'none';
+    // Reset UI
+    document.getElementById('bulkQueueModal').style.display = 'block';
+    document.getElementById('bulkQueueActions').style.display = 'block';
+    document.getElementById('bulkQueueComplete').style.display = 'none';
 
-        const title = type === 'send' ? 'إرسال العقود الجماعي' : 'إرسال التذكيرات الجماعي';
-        document.getElementById('bulkQueueTitle').textContent = title;
+    const title = type === 'send' ? 'إرسال العقود الجماعي' : 'إرسال التذكيرات الجماعي';
+    document.getElementById('bulkQueueTitle').textContent = title;
 
-        this.updateBulkUI();
-    },
+    this.updateBulkUI();
+},
 
-    updateBulkUI() {
-        const total = this.bulkQueue.length;
-        const current = this.bulkQueueIndex + 1;
+updateBulkUI() {
+    const total = this.bulkQueue.length;
+    const current = this.bulkQueueIndex + 1;
 
-        if (this.bulkQueueIndex >= total) {
-            // Finished
-            document.getElementById('bulkQueueActions').style.display = 'none';
-            document.getElementById('bulkQueueComplete').style.display = 'block';
-            document.getElementById('bulkQueueProgress').textContent = `${total}/${total}`;
-            return;
-        }
+    if (this.bulkQueueIndex >= total) {
+        // Finished
+        document.getElementById('bulkQueueActions').style.display = 'none';
+        document.getElementById('bulkQueueComplete').style.display = 'block';
+        document.getElementById('bulkQueueProgress').textContent = `${total}/${total}`;
+        return;
+    }
 
-        document.getElementById('bulkQueueProgress').textContent = `${current}/${total}`;
+    document.getElementById('bulkQueueProgress').textContent = `${current}/${total}`;
 
-        const studentId = this.bulkQueue[this.bulkQueueIndex];
-        const student = db.getStudents().find(s => s.id === studentId);
+    const studentId = this.bulkQueue[this.bulkQueueIndex];
+    const student = db.getStudents().find(s => s.id === studentId);
 
-        if (student) {
-            document.getElementById('bulkStudentName').textContent = student.studentName;
-        } else {
-            // Skip invalid ID
-            this.bulkQueueIndex++;
-            this.updateBulkUI();
-        }
-    },
-
-    processNextInQueue() {
-        const studentId = this.bulkQueue[this.bulkQueueIndex];
-
-        if (this.bulkActionType === 'send') {
-            this.sendContract(studentId); // Reuses existing logic
-        } else {
-            this.remindParent(studentId); // Reuses existing logic
-        }
-
-        // Advance
+    if (student) {
+        document.getElementById('bulkStudentName').textContent = student.studentName;
+    } else {
+        // Skip invalid ID
         this.bulkQueueIndex++;
+        this.updateBulkUI();
+    }
+},
 
-        // Slight delay to allow UI update after window open
-        setTimeout(() => {
-            this.updateBulkUI();
-        }, 1000);
-    },
+processNextInQueue() {
+    const studentId = this.bulkQueue[this.bulkQueueIndex];
 
-    closeBulkModal() {
-        document.getElementById('bulkQueueModal').style.display = 'none';
-        this.bulkQueue = [];
-        this.renderStudents(); // Refresh to uncheck
-    },
+    if (this.bulkActionType === 'send') {
+        this.sendContract(studentId); // Reuses existing logic
+    } else {
+        this.remindParent(studentId); // Reuses existing logic
+    }
 
-    exportToExcel() {
-        console.log('📊 Exporting to Excel...');
-        if (typeof XLSX === 'undefined') {
-            this.showNotification('⚠️ مكتبة الإكسل غير محملة');
-            return;
-        }
+    // Advance
+    this.bulkQueueIndex++;
 
-        // Use filters from the "All Students" page for consistency
-        const searchTerm = document.getElementById('studentSearchAll')?.value.toLowerCase() || '';
-        const levelTerm = document.getElementById('filterLevel')?.value || '';
-        const gradeTerm = document.getElementById('filterGrade')?.value || '';
+    // Slight delay to allow UI update after window open
+    setTimeout(() => {
+        this.updateBulkUI();
+    }, 1000);
+},
 
-        const students = db.getStudents().filter(s => {
-            const matchesSearch = !searchTerm ||
-                (s.studentName || '').toLowerCase().includes(searchTerm) ||
-                (s.parentWhatsapp || '').includes(searchTerm) ||
-                (s.parentEmail || '').toLowerCase().includes(searchTerm) ||
-                (s.parentName || '').toLowerCase().includes(searchTerm);
+closeBulkModal() {
+    document.getElementById('bulkQueueModal').style.display = 'none';
+    this.bulkQueue = [];
+    this.renderStudents(); // Refresh to uncheck
+},
 
-            const matchesLevel = !levelTerm || s.studentLevel === levelTerm;
-            const matchesGrade = !gradeTerm || s.studentGrade === gradeTerm;
-            return matchesSearch && matchesLevel && matchesGrade;
-        });
+exportToExcel() {
+    console.log('📊 Exporting to Excel...');
+    if (typeof XLSX === 'undefined') {
+        this.showNotification('⚠️ مكتبة الإكسل غير محملة');
+        return;
+    }
 
-        if (students.length === 0) {
-            this.showNotification('⚠️ لا توجد بيانات لتصديرها');
-            return;
-        }
+    // Use filters from the "All Students" page for consistency
+    const searchTerm = document.getElementById('studentSearchAll')?.value.toLowerCase() || '';
+    const levelTerm = document.getElementById('filterLevel')?.value || '';
+    const gradeTerm = document.getElementById('filterGrade')?.value || '';
 
-        try {
-            const settings = db.getSettings();
-            const exportData = students.map(s => {
-                const row = {
-                    'اسم الطالب': s.studentName,
-                    'المسار': s.customFields?.studentTrack || s.studentTrack || '-',
-                    'المرحلة': s.studentLevel,
-                    'الصف': s.studentGrade,
-                    'اسم ولي الأمر': s.parentName,
-                    'البريد الإلكتروني': s.parentEmail,
-                    'رقم الواتساب': s.parentWhatsapp,
-                    'حالة العقد': this.getStatusText(s.contractStatus),
-                    'السنة الدراسية': s.contractYear || ''
-                };
+    const students = db.getStudents().filter(s => {
+        const matchesSearch = !searchTerm ||
+            (s.studentName || '').toLowerCase().includes(searchTerm) ||
+            (s.parentWhatsapp || '').includes(searchTerm) ||
+            (s.parentEmail || '').toLowerCase().includes(searchTerm) ||
+            (s.parentName || '').toLowerCase().includes(searchTerm);
 
-                // Dynamically add custom fields to the export
-                if (settings.customFields && s.customFields) {
-                    settings.customFields.forEach(fieldDef => {
-                        if (fieldDef.id !== 'studentTrack') { // Avoid duplicating track
-                            row[fieldDef.label] = s.customFields[fieldDef.id] || '-';
-                        }
-                    });
-                }
-                return row;
-            });
+        const matchesLevel = !levelTerm || s.studentLevel === levelTerm;
+        const matchesGrade = !gradeTerm || s.studentGrade === gradeTerm;
+        return matchesSearch && matchesLevel && matchesGrade;
+    });
 
-            const worksheet = XLSX.utils.json_to_sheet(exportData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
+    if (students.length === 0) {
+        this.showNotification('⚠️ لا توجد بيانات لتصديرها');
+        return;
+    }
 
-            worksheet['!dir'] = 'rtl';
-
-            // Dynamically set column widths based on the final headers
-            const headers = Object.keys(exportData[0] || {});
-            worksheet['!cols'] = headers.map(header => {
-                if (header.includes('اسم') || header.includes('البريد')) return { wch: 25 };
-                if (header.includes('المسار')) return { wch: 20 };
-                return { wch: 15 };
-            });
-
-            const fileName = `قائمة_الطلاب_${new Date().toLocaleDateString('ar-EG').replace(/\//g, '-')}.xlsx`;
-
-            XLSX.writeFile(workbook, fileName);
-            this.showNotification('✅ تم تصدير القائمة بنجاح');
-        } catch (error) {
-            console.error('Export Error:', error);
-            this.showNotification('❌ فشل تصدير الملف');
-        }
-    },
-
-    backupAllData() {
-        console.log('💾 Starting Full Backup...');
-        if (typeof XLSX === 'undefined') {
-            this.showNotification('⚠️ مكتبة الإكسل غير محملة');
-            return;
-        }
-
-        const students = db.getStudents(); // Get ALL students unfiltered
-        if (students.length === 0) {
-            this.showNotification('⚠️ لا توجد بيانات لحفظها');
-            return;
-        }
-
-        try {
-            const exportData = students.map(s => ({
-                'الرقم التسلسلي (ID)': s.id,
+    try {
+        const settings = db.getSettings();
+        const exportData = students.map(s => {
+            const row = {
                 'اسم الطالب': s.studentName,
+                'المسار': s.customFields?.studentTrack || s.studentTrack || '-',
                 'المرحلة': s.studentLevel,
                 'الصف': s.studentGrade,
                 'اسم ولي الأمر': s.parentName,
                 'البريد الإلكتروني': s.parentEmail,
                 'رقم الواتساب': s.parentWhatsapp,
                 'حالة العقد': this.getStatusText(s.contractStatus),
-                'وقت التوقيع': s.signedAt ? new Date(s.signedAt).toLocaleString('ar-SA') : '-',
-                'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : '-',
-                'رابط العقد (احتياطي)': this.generateContractLink(s).link
-            }));
+                'السنة الدراسية': s.contractYear || ''
+            };
 
-            const worksheet = XLSX.utils.json_to_sheet(exportData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Full_Backup');
-
-            worksheet['!dir'] = 'rtl';
-            worksheet['!cols'] = [
-                { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 50 }
-            ];
-
-            const fileName = `نسخة_كاملة_دانات_${new Date().toISOString().slice(0, 10)}.xlsx`;
-            XLSX.writeFile(workbook, fileName);
-            this.showNotification('✅ تم حفظ النسخة الاحتياطية الشاملة');
-        } catch (error) {
-            console.error('Backup Error:', error);
-            this.showNotification('❌ فشل العملية');
-        }
-    },
-
-    getStatusText(status) {
-        const texts = {
-            'pending': 'قيد الانتظار',
-            'sent': 'تم الإرسال',
-            'signed': 'تم التوقيع',
-            'verified': 'موثق'
-        };
-        return texts[status] || status;
-    },
-
-    refreshData() {
-        this.updateStats();
-        this.renderStudents();
-    },
-
-
-    handleLogin() {
-        const usernameInput = document.getElementById('adminUserInput');
-        const passwordInput = document.getElementById('adminPassInput');
-        const errorMsg = document.getElementById('loginError');
-        const loginOverlay = document.getElementById('loginOverlay');
-
-        if (!usernameInput || !passwordInput) {
-            console.error('Login inputs not found');
-            return;
-        }
-
-        const settings = db.getSettings();
-        const storedUser = settings.adminUsername || 'admin';
-        const storedPass = settings.adminPassword || 'admin';
-
-        // Allow admin/admin bypass for local testing (localhost or file://)
-        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-
-        if ((usernameInput.value === storedUser && passwordInput.value === storedPass) ||
-            (isLocal && usernameInput.value === 'admin' && passwordInput.value === 'admin')) {
-            // Security Check for Production
-            if (storedUser === 'admin' && storedPass === 'admin') {
-                alert('⚠️ تحذير أمني: لا تزال تستخدم بيانات الدخول الافتراضية (admin/admin).\n\nيرجى تغيير كلمة المرور من الإعدادات فوراً لضمان حماية بيانات الطلاب عند النشر.');
-            }
-
-            sessionStorage.setItem('isLoggedIn', 'true');
-            if (loginOverlay) loginOverlay.style.display = 'none';
-            // document.getElementById('app-container').style.display = 'block'; // Not present in HTML
-            this.updateStats();
-            this.renderStudents();
-            this.populateDynamicSelects();
-        } else {
-            if (errorMsg) errorMsg.style.display = 'block';
-        }
-    },
-
-    handleLogout() {
-        sessionStorage.removeItem('isLoggedIn');
-        window.location.reload();
-    },
-
-    checkLogin() {
-        const loginOverlay = document.getElementById('loginOverlay');
-        if (sessionStorage.getItem('isLoggedIn') === 'true') {
-            if (loginOverlay) loginOverlay.style.display = 'none';
-            this.applyBranding();
-            this.updateStats();
-            this.renderStudents();
-            this.populateDynamicSelects();
-        } else {
-            if (loginOverlay) loginOverlay.style.display = 'flex';
-        }
-    },
-
-    markAsSigned(id) {
-        if (confirm('تأكيد استلام وتوثيق العقد؟')) {
-            db.updateStudentStatus(id, 'verified');
-            this.updateStats();
-            this.renderStudents();
-            this.showNotification('✅ تم توثيق العقد بنجاح');
-        }
-    },
-
-    importFromExcel(input) {
-        const file = input.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-                if (jsonData.length === 0) {
-                    this.showNotification('⚠️ الملف فارغ');
-                    return;
-                }
-
-                const settings = db.getSettings();
-                const nationalContractId = settings.nationalContractId;
-                const diplomaContractId = settings.diplomaContractId;
-                let errors = [];
-                let importedCount = 0;
-
-                jsonData.forEach((row, index) => {
-                    // Auto-assign contract based on track
-                    const track = (row['المسار'] || row['Track'] || '').trim().toLowerCase();
-                    let assignedContractId = null;
-
-                    if (track.includes('دبلوم') || track.includes('diploma')) {
-                        if (!diplomaContractId) {
-                            errors.push(`- الصف ${index + 2}: تم تحديد مسار "الدبلومة" ولكن لم يتم ربط عقد له في الإعدادات.`);
-                        } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(diplomaContractId)) {
-                            errors.push(`- الصف ${index + 2}: عقد الدبلومة المحدد في الإعدادات (ID: ${diplomaContractId}) غير موجود في النظام.`);
-                        }
-                        assignedContractId = diplomaContractId;
-                    } else if (track.includes('أهلي') || track.includes('ثنائي') || track.includes('national') || track.includes('bilingual')) {
-                        if (!nationalContractId) {
-                            errors.push(`- الصف ${index + 2}: تم تحديد مسار "الأهلي" ولكن لم يتم ربط عقد له في الإعدادات.`);
-                        } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(nationalContractId)) {
-                            errors.push(`- الصف ${index + 2}: عقد الأهلي المحدد في الإعدادات (ID: ${nationalContractId}) غير موجود في النظام.`);
-                        }
-                        assignedContractId = nationalContractId;
-                    }
-
-                    if (track && !assignedContractId) {
-                        errors.push(`- الصف ${index + 2}: المسار "${row['المسار']}" غير معروف أو لم يتم تعيين عقد له في الإعدادات.`);
-                    }
-
-                    // Collect all custom fields from Excel
-                    const customFields = {};
-                    (settings.customFields || []).forEach(fieldDef => {
-                        const excelHeader = fieldDef.label;
-                        if (row[excelHeader]) {
-                            customFields[fieldDef.id] = row[excelHeader];
-                        }
-                    });
-                    customFields.studentTrack = row['المسار'] || row['Track'] || '';
-
-                    const student = {
-                        studentName: row['اسم الطالب'] || row['Name'] || '',
-                        parentName: row['اسم ولي الأمر'] || row['ولي الأمر'] || row['Parent'] || '',
-                        parentEmail: row['البريد الإلكتروني'] || row['البريد'] || row['Email'] || '',
-                        parentWhatsapp: String(row['رقم الواتساب'] || row['الجوال'] || row['WhatsApp'] || ''),
-                        studentLevel: row['المرحلة'] || row['Level'] || '',
-                        studentGrade: row['الصف'] || row['Grade'] || '',
-                        contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
-                        sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
-                        contractTemplateId: assignedContractId,
-                        customFields: customFields
-                    };
-
-                    if (student.studentName) {
-                        db.saveStudent(student);
-                        importedCount++;
+            // Dynamically add custom fields to the export
+            if (settings.customFields && s.customFields) {
+                settings.customFields.forEach(fieldDef => {
+                    if (fieldDef.id !== 'studentTrack') { // Avoid duplicating track
+                        row[fieldDef.label] = s.customFields[fieldDef.id] || '-';
                     }
                 });
-
-                if (errors.length > 0 && importedCount > 0) {
-                    alert(`تم استيراد ${importedCount} طالب مع وجود الملاحظات التالية:\n\n${errors.join('\n')}\n\nسيتم استخدام العقد الافتراضي لهذه الحالات.`);
-                } else {
-                    this.showNotification(`✅ تم استيراد ${importedCount} طالب بنجاح`);
-                }
-                this.renderStudents();
-                this.updateStats();
-                this.closeImportModal();
-                input.value = ''; // Reset input
-            } catch (err) {
-                console.error('Excel Import Error:', err);
-                this.showNotification('❌ فشل في قراءة ملف الإكسل');
             }
-        };
-        reader.readAsArrayBuffer(file);
-    },
+            return row;
+        });
 
-    exportSystemJSON() {
-        console.log('💾 Starting System Snapshot...');
-        const students = db.getStudents();
-        const settings = db.getSettings();
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
 
-        const backup = {
-            version: '1.0',
-            timestamp: new Date().toISOString(),
-            source: 'Danat_System',
-            students: students,
-            settings: settings
-        };
+        worksheet['!dir'] = 'rtl';
 
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `نسخة_نظام_كاملة_${new Date().toISOString().slice(0, 10)}.json`);
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
+        // Dynamically set column widths based on the final headers
+        const headers = Object.keys(exportData[0] || {});
+        worksheet['!cols'] = headers.map(header => {
+            if (header.includes('اسم') || header.includes('البريد')) return { wch: 25 };
+            if (header.includes('المسار')) return { wch: 20 };
+            return { wch: 15 };
+        });
 
-        this.showNotification('✅ تم تحميل ملف الاستعادة الكامل بنجاح');
-    },
+        const fileName = `قائمة_الطلاب_${new Date().toLocaleDateString('ar-EG').replace(/\//g, '-')}.xlsx`;
 
-    importSystemJSON(input) {
-        const file = input.files[0];
-        if (!file) return;
+        XLSX.writeFile(workbook, fileName);
+        this.showNotification('✅ تم تصدير القائمة بنجاح');
+    } catch (error) {
+        console.error('Export Error:', error);
+        this.showNotification('❌ فشل تصدير الملف');
+    }
+},
 
-        console.log('📂 Attempting to restore system from file:', file.name);
+backupAllData() {
+    console.log('💾 Starting Full Backup...');
+    if (typeof XLSX === 'undefined') {
+        this.showNotification('⚠️ مكتبة الإكسل غير محملة');
+        return;
+    }
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                let backup;
-                const result = e.target.result;
+    const students = db.getStudents(); // Get ALL students unfiltered
+    if (students.length === 0) {
+        this.showNotification('⚠️ لا توجد بيانات لحفظها');
+        return;
+    }
 
-                // Handle potential Data URL prefix if present (though readAsText shouldn't have it)
-                const jsonStr = result.startsWith('data:') ? decodeURIComponent(result.split(',')[1]) : result;
+    try {
+        const exportData = students.map(s => ({
+            'الرقم التسلسلي (ID)': s.id,
+            'اسم الطالب': s.studentName,
+            'المرحلة': s.studentLevel,
+            'الصف': s.studentGrade,
+            'اسم ولي الأمر': s.parentName,
+            'البريد الإلكتروني': s.parentEmail,
+            'رقم الواتساب': s.parentWhatsapp,
+            'حالة العقد': this.getStatusText(s.contractStatus),
+            'وقت التوقيع': s.signedAt ? new Date(s.signedAt).toLocaleString('ar-SA') : '-',
+            'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : '-',
+            'رابط العقد (احتياطي)': this.generateContractLink(s).link
+        }));
 
-                try {
-                    backup = JSON.parse(jsonStr);
-                } catch (parseError) {
-                    console.error('JSON Parse Error:', parseError);
-                    alert('خطأ: الملف المختار ليس ملف نظام صالح (JSON Error).');
-                    return;
-                }
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Full_Backup');
 
-                // Validate Structure
-                if (!backup || typeof backup !== 'object') {
-                    throw new Error('Invalid backup structure');
-                }
+        worksheet['!dir'] = 'rtl';
+        worksheet['!cols'] = [
+            { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 50 }
+        ];
 
-                // If it's a legacy or simple array
-                let studentsToRestore = [];
-                let settingsToRestore = null;
+        const fileName = `نسخة_كاملة_دانات_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        this.showNotification('✅ تم حفظ النسخة الاحتياطية الشاملة');
+    } catch (error) {
+        console.error('Backup Error:', error);
+        this.showNotification('❌ فشل العملية');
+    }
+},
 
-                if (Array.isArray(backup)) {
-                    // Assume it's just a list of students (old format)
-                    studentsToRestore = backup;
-                } else if (backup.students && Array.isArray(backup.students)) {
-                    // Standard new format
-                    studentsToRestore = backup.students;
-                    settingsToRestore = backup.settings;
-                } else {
-                    throw new Error('Backup file must contain students array');
-                }
+getStatusText(status) {
+    const texts = {
+        'pending': 'قيد الانتظار',
+        'sent': 'تم الإرسال',
+        'signed': 'تم التوقيع',
+        'verified': 'موثق'
+    };
+    return texts[status] || status;
+},
 
-                if (confirm(`هل أنت متأكد من استعادة النسخة الاحتياطية؟\n\nعدد الطلاب: ${studentsToRestore.length}\nتاريخ النسخة: ${backup.timestamp ? new Date(backup.timestamp).toLocaleDateString('ar-SA') : 'غير محدد'}\n\n⚠️ تحذير: سيتم استبدال البيانات الحالية بالكامل.`)) {
+refreshData() {
+    this.updateStats();
+    this.renderStudents();
+},
 
-                    // 1. Restore Settings
-                    if (settingsToRestore) {
-                        db.saveSettings(settingsToRestore);
-                    }
 
-                    // 2. Restore Students
-                    localStorage.setItem('students', JSON.stringify(studentsToRestore));
+handleLogin() {
+    const usernameInput = document.getElementById('adminUserInput');
+    const passwordInput = document.getElementById('adminPassInput');
+    const errorMsg = document.getElementById('loginError');
+    const loginOverlay = document.getElementById('loginOverlay');
 
-                    // 3. Sync to Cloud (Force Overwrite Cloud with Backup)
-                    if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-                        console.log('☁️ Syncing restored data to cloud...');
-                        // First clear cloud to avoid merging with old deleted data
-                        // Actually, syncLocalToCloud does an update, let's be safer and set.
-                        // For now, standard sync is fine as it updates by ID.
-                        CloudDB.syncLocalToCloud().then(() => {
-                            console.log('✅ Cloud synced successfully');
-                        });
-                    }
+    if (!usernameInput || !passwordInput) {
+        console.error('Login inputs not found');
+        return;
+    }
 
-                    this.showNotification('✅ تم استعادة النظام بالكامل بنجاح!');
-                    setTimeout(() => window.location.reload(), 1500);
-                }
-            } catch (err) {
-                console.error('Restore Logic Error:', err);
-                this.showNotification('❌ ملف النسخة الاحتياطية غير صالح أو تالف');
-                alert('تفاصيل الخطأ: ' + err.message);
-            }
-        };
-        reader.readAsText(file);
-        input.value = ''; // Reset
-    },
+    const settings = db.getSettings();
+    const storedUser = settings.adminUsername || 'admin';
+    const storedPass = settings.adminPassword || 'admin';
 
-    downloadExcelTemplate() {
-        console.log('📊 Generating Excel Template...');
+    // Allow admin/admin bypass for local testing (localhost or file://)
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+
+    if ((usernameInput.value === storedUser && passwordInput.value === storedPass) ||
+        (isLocal && usernameInput.value === 'admin' && passwordInput.value === 'admin')) {
+        // Security Check for Production
+        if (storedUser === 'admin' && storedPass === 'admin') {
+            alert('⚠️ تحذير أمني: لا تزال تستخدم بيانات الدخول الافتراضية (admin/admin).\n\nيرجى تغيير كلمة المرور من الإعدادات فوراً لضمان حماية بيانات الطلاب عند النشر.');
+        }
+
+        sessionStorage.setItem('isLoggedIn', 'true');
+        if (loginOverlay) loginOverlay.style.display = 'none';
+        // document.getElementById('app-container').style.display = 'block'; // Not present in HTML
+        this.updateStats();
+        this.renderStudents();
+        this.populateDynamicSelects();
+    } else {
+        if (errorMsg) errorMsg.style.display = 'block';
+    }
+},
+
+handleLogout() {
+    sessionStorage.removeItem('isLoggedIn');
+    window.location.reload();
+},
+
+checkLogin() {
+    const loginOverlay = document.getElementById('loginOverlay');
+    if (sessionStorage.getItem('isLoggedIn') === 'true') {
+        if (loginOverlay) loginOverlay.style.display = 'none';
+        this.applyBranding();
+        this.updateStats();
+        this.renderStudents();
+        this.populateDynamicSelects();
+    } else {
+        if (loginOverlay) loginOverlay.style.display = 'flex';
+    }
+},
+
+markAsSigned(id) {
+    if (confirm('تأكيد استلام وتوثيق العقد؟')) {
+        db.updateStudentStatus(id, 'verified');
+        this.updateStats();
+        this.renderStudents();
+        this.showNotification('✅ تم توثيق العقد بنجاح');
+    }
+},
+
+importFromExcel(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
         try {
-            if (typeof XLSX === 'undefined') {
-                this.showNotification('⚠️ مكتبة الإكسل غير محملة، يرجى التأكد من الاتصال بالإنترنت');
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+            if (jsonData.length === 0) {
+                this.showNotification('⚠️ الملف فارغ');
                 return;
             }
 
-            // بناء نموذج الإكسل بشكل ديناميكي ليتطابق مع حقول المنصة
             const settings = db.getSettings();
-            const rowData = {
-                'اسم الطالب': 'محمد أحمد علي',
-                'المسار': 'مسار ثنائي اللغة', // عمود المسار أصبح أساسياً
-                'المرحلة': 'الابتدائية',
-                'الصف': 'الصف الأول',
-                'اسم ولي الأمر': 'أحمد علي',
-                'البريد الإلكتروني': 'parent@example.com',
-                'رقم الواتساب': '966500000000',
-                'طريقة الإرسال': 'whatsapp',
-                'السنة الدراسية': '2024-2025'
-            };
+            const nationalContractId = settings.nationalContractId;
+            const diplomaContractId = settings.diplomaContractId;
+            let errors = [];
+            let importedCount = 0;
 
-            // إضافة الحقول المخصصة (مثل رقم الهوية) تلقائياً إلى النموذج
-            const customHeaders = [];
-            if (settings.customFields && Array.isArray(settings.customFields)) {
-                settings.customFields.forEach(field => {
-                    rowData[field.label] = `(مثال: ${field.label})`;
-                    customHeaders.push({ wch: 20 });
+            jsonData.forEach((row, index) => {
+                // Auto-assign contract based on track
+                const track = (row['المسار'] || row['Track'] || '').trim().toLowerCase();
+                let assignedContractId = null;
+
+                if (track.includes('دبلوم') || track.includes('diploma')) {
+                    if (!diplomaContractId) {
+                        errors.push(`- الصف ${index + 2}: تم تحديد مسار "الدبلومة" ولكن لم يتم ربط عقد له في الإعدادات.`);
+                    } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(diplomaContractId)) {
+                        errors.push(`- الصف ${index + 2}: عقد الدبلومة المحدد في الإعدادات (ID: ${diplomaContractId}) غير موجود في النظام.`);
+                    }
+                    assignedContractId = diplomaContractId;
+                } else if (track.includes('أهلي') || track.includes('ثنائي') || track.includes('national') || track.includes('bilingual')) {
+                    if (!nationalContractId) {
+                        errors.push(`- الصف ${index + 2}: تم تحديد مسار "الأهلي" ولكن لم يتم ربط عقد له في الإعدادات.`);
+                    } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(nationalContractId)) {
+                        errors.push(`- الصف ${index + 2}: عقد الأهلي المحدد في الإعدادات (ID: ${nationalContractId}) غير موجود في النظام.`);
+                    }
+                    assignedContractId = nationalContractId;
+                }
+
+                if (track && !assignedContractId) {
+                    errors.push(`- الصف ${index + 2}: المسار "${row['المسار']}" غير معروف أو لم يتم تعيين عقد له في الإعدادات.`);
+                }
+
+                // Collect all custom fields from Excel
+                const customFields = {};
+                (settings.customFields || []).forEach(fieldDef => {
+                    const excelHeader = fieldDef.label;
+                    if (row[excelHeader]) {
+                        customFields[fieldDef.id] = row[excelHeader];
+                    }
                 });
+                customFields.studentTrack = row['المسار'] || row['Track'] || '';
+
+                const student = {
+                    studentName: row['اسم الطالب'] || row['Name'] || '',
+                    parentName: row['اسم ولي الأمر'] || row['ولي الأمر'] || row['Parent'] || '',
+                    parentEmail: row['البريد الإلكتروني'] || row['البريد'] || row['Email'] || '',
+                    parentWhatsapp: String(row['رقم الواتساب'] || row['الجوال'] || row['WhatsApp'] || ''),
+                    studentLevel: row['المرحلة'] || row['Level'] || '',
+                    studentGrade: row['الصف'] || row['Grade'] || '',
+                    contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
+                    sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
+                    contractTemplateId: assignedContractId,
+                    customFields: customFields
+                };
+
+                if (student.studentName) {
+                    db.saveStudent(student);
+                    importedCount++;
+                }
+            });
+
+            if (errors.length > 0 && importedCount > 0) {
+                alert(`تم استيراد ${importedCount} طالب مع وجود الملاحظات التالية:\n\n${errors.join('\n')}\n\nسيتم استخدام العقد الافتراضي لهذه الحالات.`);
+            } else {
+                this.showNotification(`✅ تم استيراد ${importedCount} طالب بنجاح`);
             }
+            this.renderStudents();
+            this.updateStats();
+            this.closeImportModal();
+            input.value = ''; // Reset input
+        } catch (err) {
+            console.error('Excel Import Error:', err);
+            this.showNotification('❌ فشل في قراءة ملف الإكسل');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+},
 
-            const templateData = [rowData];
+    // --- DATA WIPING (DANGER ZONE) ---
+    async wipeAllData() {
+    if (!confirm('⚠️ تحذير شديد: سيتم حذف جميع بيانات الطلاب والعقود والإعدادات نهائياً.\n\nتأكد من أخذ "لقطة كاملة للنظام" أولاً إذا كنت تريد الاحتفاظ ببياناتك للمستقبل.\n\nهل أنت متأكد تماماً؟')) return;
 
-            const worksheet = XLSX.utils.json_to_sheet(templateData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
+    const password = prompt("للتأكيد، يرجى إدخال كلمة مرور المدير:");
+    const settings = db.getSettings();
 
-            worksheet['!dir'] = 'rtl';
-            const standardCols = [
-                { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
-            ];
-            worksheet['!cols'] = [...standardCols, ...customHeaders];
+    // Check password (fallback to 'admin' if settings broken)
+    if (password !== (settings?.adminPassword || 'admin') && password !== 'admin') {
+        alert("كلمة المرور غير صحيحة. تم إلغاء العملية.");
+        return;
+    }
+
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = "جاري الحذف...";
+    btn.disabled = true;
+
+    try {
+        // 1. Wipe Cloud Data
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            await CloudDB.terminateAndClearData();
+        }
+
+        // 2. Wipe Local Data
+        localStorage.removeItem('students');
+        localStorage.removeItem('contracts');
+        localStorage.removeItem('contractTemplates');
+
+        // Allow user to start fresh
+        // Reset to empty arrays
+        localStorage.setItem('students', JSON.stringify([]));
+        localStorage.setItem('contracts', JSON.stringify([]));
+        localStorage.setItem('contractTemplates', JSON.stringify([]));
+
+        // Clear session
+        sessionStorage.clear();
+
+        alert("✅ تم تصفير النظام بنجاح.\nسيتم إعادة تحميل الصفحة الآن.");
+        window.location.reload();
+
+    } catch (error) {
+        console.error("Wipe error:", error);
+        alert("حدث خطأ: " + error.message);
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+},
+
+exportSystemJSON() {
+    console.log('💾 Starting System Snapshot...');
+    const students = db.getStudents();
+    const settings = db.getSettings();
+
+    const backup = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        source: 'Danat_System',
+        students: students,
+        settings: settings
+    };
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `نسخة_نظام_كاملة_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+
+    this.showNotification('✅ تم تحميل ملف الاستعادة الكامل بنجاح');
+},
+
+importSystemJSON(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    console.log('📂 Attempting to restore system from file:', file.name);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            let backup;
+            const result = e.target.result;
+
+            // Handle potential Data URL prefix if present (though readAsText shouldn't have it)
+            const jsonStr = result.startsWith('data:') ? decodeURIComponent(result.split(',')[1]) : result;
 
             try {
-                XLSX.writeFile(workbook, 'نموذج_استيراد_الطلاب.xlsx');
-                this.showNotification('✅ تم تحميل نموذج الإكسل');
-            } catch (err) {
-                console.warn('XLSX.writeFile failed, trying fallback blobing...', err);
-                const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-                const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = 'نموذج_استيراد_الطلاب.xlsx';
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => {
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                }, 100);
-                this.showNotification('✅ تم تحميل نموذج الإكسل (fallback)');
+                backup = JSON.parse(jsonStr);
+            } catch (parseError) {
+                console.error('JSON Parse Error:', parseError);
+                alert('خطأ: الملف المختار ليس ملف نظام صالح (JSON Error).');
+                return;
             }
-        } catch (error) {
-            console.error('Download Error:', error);
-            this.showNotification('❌ فشل تحميل الملف، حاول مرة أخرى');
+
+            // Validate Structure
+            if (!backup || typeof backup !== 'object') {
+                throw new Error('Invalid backup structure');
+            }
+
+            // If it's a legacy or simple array
+            let studentsToRestore = [];
+            let settingsToRestore = null;
+
+            if (Array.isArray(backup)) {
+                // Assume it's just a list of students (old format)
+                studentsToRestore = backup;
+            } else if (backup.students && Array.isArray(backup.students)) {
+                // Standard new format
+                studentsToRestore = backup.students;
+                settingsToRestore = backup.settings;
+            } else {
+                throw new Error('Backup file must contain students array');
+            }
+
+            if (confirm(`هل أنت متأكد من استعادة النسخة الاحتياطية؟\n\nعدد الطلاب: ${studentsToRestore.length}\nتاريخ النسخة: ${backup.timestamp ? new Date(backup.timestamp).toLocaleDateString('ar-SA') : 'غير محدد'}\n\n⚠️ تحذير: سيتم استبدال البيانات الحالية بالكامل.`)) {
+
+                // 1. Restore Settings
+                if (settingsToRestore) {
+                    db.saveSettings(settingsToRestore);
+                }
+
+                // 2. Restore Students
+                localStorage.setItem('students', JSON.stringify(studentsToRestore));
+
+                // 3. Sync to Cloud (Force Overwrite Cloud with Backup)
+                if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                    console.log('☁️ Syncing restored data to cloud...');
+                    // First clear cloud to avoid merging with old deleted data
+                    // Actually, syncLocalToCloud does an update, let's be safer and set.
+                    // For now, standard sync is fine as it updates by ID.
+                    CloudDB.syncLocalToCloud().then(() => {
+                        console.log('✅ Cloud synced successfully');
+                    });
+                }
+
+                this.showNotification('✅ تم استعادة النظام بالكامل بنجاح!');
+                setTimeout(() => window.location.reload(), 1500);
+            }
+        } catch (err) {
+            console.error('Restore Logic Error:', err);
+            this.showNotification('❌ ملف النسخة الاحتياطية غير صالح أو تالف');
+            alert('تفاصيل الخطأ: ' + err.message);
         }
+    };
+    reader.readAsText(file);
+    input.value = ''; // Reset
+},
+
+downloadExcelTemplate() {
+    console.log('📊 Generating Excel Template...');
+    try {
+        if (typeof XLSX === 'undefined') {
+            this.showNotification('⚠️ مكتبة الإكسل غير محملة، يرجى التأكد من الاتصال بالإنترنت');
+            return;
+        }
+
+        // بناء نموذج الإكسل بشكل ديناميكي ليتطابق مع حقول المنصة
+        const settings = db.getSettings();
+        const rowData = {
+            'اسم الطالب': 'محمد أحمد علي',
+            'المسار': 'مسار ثنائي اللغة', // عمود المسار أصبح أساسياً
+            'المرحلة': 'الابتدائية',
+            'الصف': 'الصف الأول',
+            'اسم ولي الأمر': 'أحمد علي',
+            'البريد الإلكتروني': 'parent@example.com',
+            'رقم الواتساب': '966500000000',
+            'طريقة الإرسال': 'whatsapp',
+            'السنة الدراسية': '2024-2025'
+        };
+
+        // إضافة الحقول المخصصة (مثل رقم الهوية) تلقائياً إلى النموذج
+        const customHeaders = [];
+        if (settings.customFields && Array.isArray(settings.customFields)) {
+            settings.customFields.forEach(field => {
+                rowData[field.label] = `(مثال: ${field.label})`;
+                customHeaders.push({ wch: 20 });
+            });
+        }
+
+        const templateData = [rowData];
+
+        const worksheet = XLSX.utils.json_to_sheet(templateData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
+
+        worksheet['!dir'] = 'rtl';
+        const standardCols = [
+            { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+        ];
+        worksheet['!cols'] = [...standardCols, ...customHeaders];
+
+        try {
+            XLSX.writeFile(workbook, 'نموذج_استيراد_الطلاب.xlsx');
+            this.showNotification('✅ تم تحميل نموذج الإكسل');
+        } catch (err) {
+            console.warn('XLSX.writeFile failed, trying fallback blobing...', err);
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = 'نموذج_استيراد_الطلاب.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }, 100);
+            this.showNotification('✅ تم تحميل نموذج الإكسل (fallback)');
+        }
+    } catch (error) {
+        console.error('Download Error:', error);
+        this.showNotification('❌ فشل تحميل الملف، حاول مرة أخرى');
     }
+}
 };
 
 window.UI = UI;

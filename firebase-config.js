@@ -279,6 +279,31 @@ const CloudDB = {
                 console.error('Cloud fetch font error:', err);
                 return null;
             });
+    },
+
+    // --- DANGER ZONE: WIPE ALL DATA ---
+    terminateAndClearData() {
+        if (!firebaseDb) return Promise.reject({ message: 'Firebase not configured' });
+
+        console.warn('⚠️ WARNING: Wiping ALL data from cloud...');
+
+        // Remove students, templates, and settings
+        const updates = {};
+        updates['students'] = null;
+        updates['templates'] = null;
+        updates['settings'] = null;
+        // Optionally keep fonts or remove them too
+        // updates['fonts'] = null; 
+
+        return firebaseDb.ref().update(updates)
+            .then(() => {
+                console.log('✅ Cloud data wiped successfully.');
+                return true;
+            })
+            .catch(err => {
+                console.error('Cloud wipe error:', err);
+                return false;
+            });
     }
 };
 
