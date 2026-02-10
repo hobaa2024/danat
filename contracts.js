@@ -682,23 +682,25 @@ const ContractUI = {
         const list = document.getElementById('pdfVariablesList');
         if (!list) return;
 
+        const isEn = (localStorage.getItem('app_lang') || 'ar') === 'en';
+
         // Standard placeholders
         const standard = [
-            { key: '{اسم_الطالب}', label: 'اسم الطالب' },
-            { key: '{اسم_ولي_الامر}', label: 'اسم ولي الأمر' },
-            { key: '{المسار}', label: 'المسار' },
-            { key: '{الصف}', label: 'الصف' },
-            { key: '{المرحلة_الدراسية}', label: 'المرحلة' },
-            { key: '{السنة_الدراسية}', label: 'السنة' },
-            { key: '{التاريخ}', label: 'التاريخ' },
-            { key: '{رقم_هوية_الطالب}', label: 'رقم هوية الطالب' },
-            { key: '{رقم_هوية_ولي_الأمر}', label: 'رقم هوية ولي الأمر' },
-            { key: '{رقم_جوال_ولي_الأمر}', label: 'رقم جوال ولي الأمر' },
-            { key: '{العنوان}', label: 'العنوان' },
-            { key: '{الجنسية}', label: 'الجنسية' },
-            { key: '{توقيع}', label: 'مكان التوقيع' },
-            { key: '{الختم}', label: 'مكان الختم' },
-            { key: '{الهوية}', label: 'مكان الهوية' }
+            { key: '{اسم_الطالب}', label: isEn ? 'Student Name' : 'اسم الطالب' },
+            { key: '{اسم_ولي_الامر}', label: isEn ? 'Parent Name' : 'اسم ولي الأمر' },
+            { key: '{المسار}', label: isEn ? 'Track' : 'المسار' },
+            { key: '{الصف}', label: isEn ? 'Grade' : 'الصف' },
+            { key: '{المرحلة_الدراسية}', label: isEn ? 'Level' : 'المرحلة' },
+            { key: '{السنة_الدراسية}', label: isEn ? 'Year' : 'السنة' },
+            { key: '{التاريخ}', label: isEn ? 'Date' : 'التاريخ' },
+            { key: '{رقم_هوية_الطالب}', label: isEn ? 'Student ID' : 'رقم هوية الطالب' },
+            { key: '{رقم_هوية_ولي_الأمر}', label: isEn ? 'Parent ID' : 'رقم هوية ولي الأمر' },
+            { key: '{رقم_جوال_ولي_الأمر}', label: isEn ? 'Parent Mobile' : 'رقم جوال ولي الأمر' },
+            { key: '{العنوان}', label: isEn ? 'Address' : 'العنوان' },
+            { key: '{الجنسية}', label: isEn ? 'Nationality' : 'الجنسية' },
+            { key: '{توقيع}', label: isEn ? 'Signature Place' : 'مكان التوقيع' },
+            { key: '{الختم}', label: isEn ? 'Stamp Place' : 'مكان الختم' },
+            { key: '{الهوية}', label: isEn ? 'ID Place' : 'مكان الهوية' }
         ];
 
         let html = standard.map(v => `
@@ -711,7 +713,7 @@ const ContractUI = {
         try {
             const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
             if (settings.customFields && settings.customFields.length > 0) {
-                html += '<div style="font-size: 10px; color: #64748b; margin-top: 10px; padding: 0 5px;">حقول مخصصة:</div>';
+                html += `<div style="font-size: 10px; color: #64748b; margin-top: 10px; padding: 0 5px;">${isEn ? 'Custom Fields:' : 'حقول مخصصة:'}</div>`;
                 settings.customFields.forEach(f => {
                     const key = `{${f.label}}`;
                     html += `

@@ -1,3 +1,60 @@
+// Language Manager
+const Lang = {
+    current: localStorage.getItem('app_lang') || 'ar',
+    toggle: function () {
+        this.current = this.current === 'ar' ? 'en' : 'ar';
+        localStorage.setItem('app_lang', this.current);
+        location.reload();
+    },
+    t: function (key) {
+        return (this.dict[this.current] && this.dict[this.current][key]) || key;
+    },
+    dict: {
+        ar: {
+            status_pending: 'قيد الانتظار',
+            status_sent: 'تم الإرسال',
+            status_signed: 'تم التوقيع',
+            status_verified: 'موثق',
+            action_send: 'إرسال',
+            action_remind: 'تذكير',
+            action_verify: 'توثيق',
+            action_download: 'تحميل',
+            action_edit: 'تعديل',
+            action_copy_link: 'نسخ الرابط',
+            action_preview: 'معاينة',
+            action_unsign: 'إلغاء التوقيع',
+            action_delete: 'حذف',
+            no_contracts: 'لا توجد عقود موثقة حالياً',
+            no_results: 'لا توجد نتائج للبحث',
+            verify_now: 'توثيق الآن',
+            confirm_verify: 'تأكيد استلام وتوثيق العقد؟',
+            verified_success: '✅ تم توثيق العقد بنجاح',
+            unknown: 'غير معروف'
+        },
+        en: {
+            status_pending: 'Pending',
+            status_sent: 'Sent',
+            status_signed: 'Signed',
+            status_verified: 'Verified',
+            action_send: 'Send',
+            action_remind: 'Remind',
+            action_verify: 'Verify',
+            action_download: 'Download',
+            action_edit: 'Edit',
+            action_copy_link: 'Copy Link',
+            action_preview: 'Preview',
+            action_unsign: 'Unsign',
+            action_delete: 'Delete',
+            no_contracts: 'No verified contracts currently',
+            no_results: 'No search results',
+            verify_now: 'Verify Now',
+            confirm_verify: 'Confirm contract verification?',
+            verified_success: '✅ Contract verified successfully',
+            unknown: 'Unknown'
+        }
+    }
+};
+
 // Database Management using LocalStorage
 class DatabaseManager {
     constructor() {
@@ -641,7 +698,7 @@ const UI = {
         contractsTableBody.innerHTML = '';
 
         if (students.length === 0) {
-            const message = searchTerm ? 'لا توجد نتائج للبحث' : 'لا توجد عقود موثقة حالياً';
+            const message = searchTerm ? Lang.t('no_results') : Lang.t('no_contracts');
             contractsTableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 20px;">${message}</td></tr>`;
             return;
         }
@@ -660,13 +717,13 @@ const UI = {
                 <td>
                     <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                         ${student.contractStatus === 'signed' ? `
-                            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="توثيق الآن" style="color: #38b2ac;">
+                            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="${Lang.t('verify_now')}" style="color: #38b2ac;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                             </button>` : ''}
-                        <button class="btn-icon" onclick="UI.previewContract('${student.id}')" title="معاينة" style="color: #3b82f6;">
+                        <button class="btn-icon" onclick="UI.previewContract('${student.id}')" title="${Lang.t('action_preview')}" style="color: #3b82f6;">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                         </button>
-                        <button class="btn-icon" onclick="UI.downloadContractPdf('${student.id}')" title="تحميل" style="color: #f59e0b;">
+                        <button class="btn-icon" onclick="UI.downloadContractPdf('${student.id}')" title="${Lang.t('action_download')}" style="color: #f59e0b;">
                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         </button>
                     </div>
@@ -686,7 +743,7 @@ const UI = {
 
         // Verification Button (Green) - only for 'signed' status
         const verifyBtn = student.contractStatus === 'signed' ? `
-            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="تأكيد الاستلام والتوثيق" style="color: #38b2ac;">
+            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="${Lang.t('action_verify')}" style="color: #38b2ac;">
                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             </button>
         ` : '';
@@ -728,25 +785,25 @@ const UI = {
                     ${(() => {
                 // Determine Primary Action
                 if (student.contractStatus === 'pending') {
-                    return `<button class="action-btn-main send" onclick="UI.sendContract('${student.id}')" title="إرسال العقد">
+                    return `<button class="action-btn-main send" onclick="UI.sendContract('${student.id}')" title="${Lang.t('action_send')}">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                                إرسال
+                                ${Lang.t('action_send')}
                             </button>`;
                 } else if (student.contractStatus === 'sent') {
-                    return `<button class="action-btn-main remind" onclick="UI.remindParent('${student.id}')" title="إرسال تذكير">
+                    return `<button class="action-btn-main remind" onclick="UI.remindParent('${student.id}')" title="${Lang.t('action_remind')}">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                                تذكير
+                                ${Lang.t('action_remind')}
                             </button>`;
                 } else if (student.contractStatus === 'signed') {
-                    return `<button class="action-btn-main verify" onclick="markAsSigned('${student.id}')" title="توثيق العقد">
+                    return `<button class="action-btn-main verify" onclick="markAsSigned('${student.id}')" title="${Lang.t('action_verify')}">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                                توثيق
+                                ${Lang.t('action_verify')}
                             </button>`;
                 } else {
                     // Verified
-                    return `<button class="action-btn-main verify" onclick="UI.downloadContractPdf('${student.id}')" title="تحميل">
+                    return `<button class="action-btn-main verify" onclick="UI.downloadContractPdf('${student.id}')" title="${Lang.t('action_download')}">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                تحميل
+                                ${Lang.t('action_download')}
                             </button>`;
                 }
             })()}
@@ -757,28 +814,28 @@ const UI = {
                         </button>
                         <div id="${menuId}" class="action-dropdown-menu">
                             <button class="action-dropdown-item" onclick="UI.editStudent('${student.id}')">
-                                <span style="width:20px">✏️</span> تعديل
+                                <span style="width:20px">✏️</span> ${Lang.t('action_edit')}
                             </button>
                             
                             ${student.contractStatus !== 'signed' && student.contractStatus !== 'verified' ? `
                             <button class="action-dropdown-item" onclick="UI.copyContractLink('${student.id}')">
-                                <span style="width:20px">🔗</span> نسخ الرابط
+                                <span style="width:20px">🔗</span> ${Lang.t('action_copy_link')}
                             </button>
                             ` : ''}
 
                             ${student.contractStatus === 'signed' || student.contractStatus === 'verified' ? `
                             <button class="action-dropdown-item" onclick="UI.previewContract('${student.id}')">
-                                <span style="width:20px">👁️</span> معاينة
+                                <span style="width:20px">👁️</span> ${Lang.t('action_preview')}
                             </button>
                             <button class="action-dropdown-item" onclick="UI.deleteSignedContent('${student.id}')" style="color:#d97706">
-                                <span style="width:20px">↩️</span> إلغاء التوقيع
+                                <span style="width:20px">↩️</span> ${Lang.t('action_unsign')}
                             </button>
                             ` : ''}
 
                             <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
                             
                             <button class="action-dropdown-item delete" onclick="UI.deleteStudent('${student.id}')">
-                                <span style="width:20px">🗑️</span> حذف
+                                <span style="width:20px">🗑️</span> ${Lang.t('action_delete')}
                             </button>
                         </div>
                     </div>
@@ -863,12 +920,12 @@ const UI = {
 
     getStatusBadge(status) {
         const badges = {
-            'pending': '<span class="status-badge status-pending">قيد الانتظار</span>',
-            'sent': '<span class="status-badge status-sent">تم الإرسال</span>',
-            'signed': '<span class="status-badge status-signed">تم التوقيع</span>',
-            'verified': '<span class="status-badge status-verified">موثق</span>'
+            'pending': `<span class="status-badge status-pending">${Lang.t('status_pending')}</span>`,
+            'sent': `<span class="status-badge status-sent">${Lang.t('status_sent')}</span>`,
+            'signed': `<span class="status-badge status-signed">${Lang.t('status_signed')}</span>`,
+            'verified': `<span class="status-badge status-verified">${Lang.t('status_verified')}</span>`
         };
-        return badges[status] || '<span class="status-badge">غير معروف</span>';
+        return badges[status] || `<span class="status-badge">${Lang.t('unknown')}</span>`;
     },
     generateContractLink(student) {
         const settings = db.getSettings();
@@ -2271,11 +2328,11 @@ ${link}
     },
 
     markAsSigned(id) {
-        if (confirm('تأكيد استلام وتوثيق العقد؟')) {
+        if (confirm(Lang.t('confirm_verify'))) {
             db.updateStudentStatus(id, 'verified');
             this.updateStats();
             this.renderStudents();
-            this.showNotification('✅ تم توثيق العقد بنجاح');
+            this.showNotification(Lang.t('verified_success'));
         }
     },
 
@@ -2577,6 +2634,20 @@ document.addEventListener('DOMContentLoaded', () => {
     UI.checkLogin(); // Check if already logged in
     UI.initTheme();  // Initialize Dark Mode
     UI.applyBranding(); // Apply school identity
+
+    // Inject Language Toggle
+    const nav = document.querySelector('.navbar-end') || document.querySelector('.navbar') || document.body;
+    const langBtn = document.createElement('button');
+    langBtn.className = 'btn-icon';
+    langBtn.style.marginLeft = '10px';
+    langBtn.style.fontSize = '1.2rem';
+    langBtn.innerHTML = Lang.current === 'ar' ? '🇺🇸 EN' : '🇸🇦 AR';
+    langBtn.title = 'Switch Language';
+    langBtn.onclick = () => Lang.toggle();
+
+    if (nav.classList.contains('navbar-end')) nav.prepend(langBtn);
+    else if (nav.classList.contains('navbar')) nav.appendChild(langBtn);
+    else { langBtn.style.position = 'fixed'; langBtn.style.bottom = '10px'; langBtn.style.left = '10px'; langBtn.style.zIndex = '9999'; document.body.appendChild(langBtn); }
 
     // 2. Tab Navigation
     const navLinks = document.querySelectorAll('.nav-link');
