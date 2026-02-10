@@ -136,21 +136,6 @@ const CloudDB = {
                 return Promise.reject(err);
             });
     },
-
-    // Clear all students from Cloud (Security/Reset)
-    clearAllStudents() {
-        if (!firebaseDb) return Promise.resolve(false);
-        return firebaseDb.ref('students').remove()
-            .then(() => {
-                console.log('☁️ All students cleared from cloud');
-                return true;
-            })
-            .catch(err => {
-                console.error('Cloud clear error:', err);
-                return false;
-            });
-    },
-
     // Sync local data to cloud (admin use)
     syncLocalToCloud() {
         if (!firebaseDb) {
