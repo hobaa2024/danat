@@ -297,7 +297,8 @@ class DatabaseManager {
                 { id: 'nationalId', label: 'رقم الهوية', type: 'number' }
             ],
             nationalContractId: null, // ID for the national track contract
-            diplomaContractId: null   // ID for the diploma track contract
+            diplomaContractId: null,   // ID for the diploma track contract
+            smsConfig: { url: '', enabled: false, messageTemplate: 'عقد الطالب {student}: {link}' }
         };
         try {
             const savedRaw = localStorage.getItem('appSettings');
@@ -1578,12 +1579,43 @@ ${link}
         const url = `https://wa.me/${student.parentWhatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
         window.open(url, '_blank');
 
+        // Send SMS if enabled
+        this.sendSMS(student, link);
+
         // PRESERVE SIGNATURE: Only update to 'sent' if it's currently 'pending'
         // If it was already 'signed' or 'verified', don't set it back to 'sent'
         if (student.contractStatus === 'pending') {
             db.updateStudentStatus(id, 'sent');
             this.updateStats();
             this.renderStudents();
+        }
+    },
+
+    async sendSMS(student, contractLink) {
+        const settings = db.getSettings();
+        const config = settings.smsConfig;
+
+        if (!config || !config.enabled || !config.url) return;
+
+        const phone = student.parentWhatsapp.replace(/[^\d]/g, '');
+        if (!phone) return;
+
+        let msg = config.messageTemplate || 'عقد الطالب {student}: {link}';
+        msg = msg.replace('{student}', student.studentName).replace('{link}', contractLink);
+
+        // Replace placeholders in URL
+        const finalUrl = config.url
+            .replace('{phone}', phone)
+            .replace('{message}', encodeURIComponent(msg));
+
+        try {
+            // Attempt to send
+            fetch(finalUrl, { mode: 'no-cors' }).then(() => {
+                console.log('SMS Request Sent');
+                this.showNotification(Lang.t('sms_sent'));
+            }).catch(e => console.warn('SMS Error', e));
+        } catch (e) {
+            console.error('SMS Exception', e);
         }
     },
 
@@ -1694,6 +1726,13 @@ ${link}
         const adminUser = document.getElementById('adminUsernameSetting')?.value;
         const adminPass = document.getElementById('adminPassSetting')?.value;
 
+        // SMS Settings
+        const smsConfig = {
+            url: document.getElementById('smsUrlInput')?.value || '',
+            messageTemplate: document.getElementById('smsTemplateInput')?.value || '',
+            enabled: document.getElementById('smsEnableCheck')?.checked || false
+        };
+
         const currentSettings = db.getSettings();
 
         // Safe capture of contract IDs (don't overwrite with null if element is missing)
@@ -1712,7 +1751,8 @@ ${link}
             schoolLogo: logo.startsWith('data:') ? logo : (currentSettings.schoolLogo || ''),
             stampImage: stampImage.startsWith('data:') ? stampImage : (currentSettings.stampImage || ''),
             nationalContractId: (nationalEl && nationalEl.value) ? nationalEl.value : currentSettings.nationalContractId,
-            diplomaContractId: (diplomaEl && diplomaEl.value) ? diplomaEl.value : currentSettings.diplomaContractId
+            diplomaContractId: (diplomaEl && diplomaEl.value) ? diplomaEl.value : currentSettings.diplomaContractId,
+            smsConfig: smsConfig
         };
 
         if (adminUser) settings.adminUsername = adminUser;
@@ -1978,8 +2018,48 @@ ${link}
         }
     },
 
+    injectSmsSettingsUI() {
+        if (document.getElementById('smsUrlInput')) return;
+
+        const phoneInput = document.getElementById('schoolPhone');
+        if (!phoneInput) return;
+
+        // Find a good place to insert (after the phone number field)
+        const container = phoneInput.closest('.form-row') || phoneInput.parentElement.parentElement;
+
+        const section = document.createElement('div');
+        section.className = 'settings-section';
+        section.style.cssText = 'margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;';
+
+        section.innerHTML = `
+            <h3 style="font-size:1.1rem; margin-bottom:15px; color:var(--primary-color);">${Lang.t('lbl_sms_settings')}</h3>
+            <div class="form-row" style="display:flex; gap:15px; flex-wrap:wrap;">
+                <div class="form-group" style="flex:1; min-width:300px;">
+                    <label>${Lang.t('lbl_sms_url')}</label>
+                    <input type="text" id="smsUrlInput" placeholder="https://api.sms.com/send?user=...&mobile={phone}&msg={message}" style="direction:ltr; text-align:left;">
+                    <small style="color:#718096; font-size:0.8rem;">${Lang.t('sms_url_hint')}</small>
+                </div>
+            </div>
+            <div class="form-row" style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px;">
+                <div class="form-group" style="flex:1;">
+                    <label>${Lang.t('lbl_sms_template')}</label>
+                    <input type="text" id="smsTemplateInput" placeholder="عقد الطالب {student}: {link}">
+                </div>
+                <div class="form-group" style="width:auto; display:flex; align-items:center; padding-top:25px;">
+                    <label style="display:flex; align-items:center; cursor:pointer;">
+                        <input type="checkbox" id="smsEnableCheck" style="width:18px; height:18px; margin-left:8px;">
+                        ${Lang.t('lbl_sms_enable')}
+                    </label>
+                </div>
+            </div>
+        `;
+
+        container.parentNode.insertBefore(section, container.nextSibling);
+    },
+
     loadSettingsPage() {
         try {
+            this.injectSmsSettingsUI(); // Inject SMS UI first
             this.populateDynamicSelects(); // Ensure dropdowns are populated first!
             const settings = db.getSettings();
 
@@ -1993,6 +2073,13 @@ ${link}
             // Load contract assignment settings
             if (document.getElementById('nationalContractSetting')) document.getElementById('nationalContractSetting').value = settings.nationalContractId || '';
             if (document.getElementById('diplomaContractSetting')) document.getElementById('diplomaContractSetting').value = settings.diplomaContractId || '';
+
+            // Load SMS Settings
+            if (document.getElementById('smsUrlInput')) {
+                document.getElementById('smsUrlInput').value = settings.smsConfig?.url || '';
+                document.getElementById('smsTemplateInput').value = settings.smsConfig?.messageTemplate || 'عقد الطالب {student}: {link}';
+                document.getElementById('smsEnableCheck').checked = settings.smsConfig?.enabled || false;
+            }
 
             // Logo
             if (document.getElementById('settingsLogoPreview') && settings.schoolLogo) {
