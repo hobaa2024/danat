@@ -29,7 +29,29 @@ const Lang = {
             verify_now: 'توثيق الآن',
             confirm_verify: 'تأكيد استلام وتوثيق العقد؟',
             verified_success: '✅ تم توثيق العقد بنجاح',
-            unknown: 'غير معروف'
+            unknown: 'غير معروف',
+            // Navigation
+            nav_dashboard: 'لوحة التحكم',
+            nav_students: 'الطلاب',
+            nav_contracts: 'العقود',
+            nav_settings: 'الإعدادات',
+            // Buttons & UI
+            btn_new_student: 'تسجيل طالب جديد',
+            btn_delete_selected: 'حذف المحدد',
+            btn_save: 'حفظ',
+            btn_cancel: 'إلغاء',
+            btn_close: 'إغلاق',
+            search_placeholder: 'بحث...',
+            // Dropdowns
+            select_level: 'اختر المرحلة',
+            select_grade: 'اختر الصف',
+            filter_level_all: 'المرحلة: الكل',
+            filter_grade_all: 'الصف: الكل',
+            // Messages
+            msg_no_pending: '✨ ممتاز! لا توجد عقود معلقة حالياً',
+            msg_no_students: 'لا يوجد طلاب مسجلين',
+            msg_confirm_delete: 'هل أنت متأكد من حذف هذا الطالب نهائياً؟',
+            msg_select_students: '⚠️ يرجى اختيار طلاب للحذف'
         },
         en: {
             status_pending: 'Pending',
@@ -50,7 +72,29 @@ const Lang = {
             verify_now: 'Verify Now',
             confirm_verify: 'Confirm contract verification?',
             verified_success: '✅ Contract verified successfully',
-            unknown: 'Unknown'
+            unknown: 'Unknown',
+            // Navigation
+            nav_dashboard: 'Dashboard',
+            nav_students: 'Students',
+            nav_contracts: 'Contracts',
+            nav_settings: 'Settings',
+            // Buttons & UI
+            btn_new_student: 'New Student',
+            btn_delete_selected: 'Delete Selected',
+            btn_save: 'Save',
+            btn_cancel: 'Cancel',
+            btn_close: 'Close',
+            search_placeholder: 'Search...',
+            // Dropdowns
+            select_level: 'Select Level',
+            select_grade: 'Select Grade',
+            filter_level_all: 'Level: All',
+            filter_grade_all: 'Grade: All',
+            // Messages
+            msg_no_pending: '✨ Great! No pending contracts.',
+            msg_no_students: 'No students registered.',
+            msg_confirm_delete: 'Are you sure you want to permanently delete this student?',
+            msg_select_students: '⚠️ Please select students to delete.'
         }
     }
 };
@@ -427,7 +471,7 @@ const UI = {
         const ids = Array.from(checks).map(cb => cb.value);
 
         if (ids.length === 0) {
-            this.showNotification('⚠️ يرجى اختيار طلاب للحذف');
+            this.showNotification(Lang.t('msg_select_students'));
             return;
         }
 
@@ -446,7 +490,7 @@ const UI = {
 
     openModal() {
         const title = document.getElementById('modalTitle');
-        if (title) title.textContent = 'تسجيل طالب جديد';
+        if (title) title.textContent = Lang.current === 'en' ? 'Register New Student' : 'تسجيل طالب جديد';
 
         const form = document.getElementById('studentForm');
         if (form) {
@@ -645,7 +689,7 @@ const UI = {
                 .slice(0, 5);
 
             if (displayStudents.length === 0) {
-                this.tableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #10b981; font-weight:bold;">✨ ممتاز! لا توجد عقود معلقة حالياً</td></tr>';
+                this.tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px; color: #10b981; font-weight:bold;">${Lang.t('msg_no_pending')}</td></tr>`;
             } else {
                 displayStudents.forEach(student => {
                     const row = document.createElement('tr');
@@ -660,7 +704,7 @@ const UI = {
         if (allTableBody) {
             allTableBody.innerHTML = '';
             if (students.length === 0) {
-                allTableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px;">لا يوجد طلاب مسجلين</td></tr>';
+                allTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px;">${Lang.t('msg_no_students')}</td></tr>`;
             } else {
                 students.forEach(student => {
                     const row = document.createElement('tr');
@@ -1913,10 +1957,10 @@ ${link}
         const gradeSelects = [document.getElementById('studentGrade'), document.getElementById('filterGrade')];
 
         levelSelects.forEach(sel => {
-            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'المرحلة: الكل' : 'اختر المرحلة'}</option>` + levelOptions;
+            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? Lang.t('filter_level_all') : Lang.t('select_level')}</option>` + levelOptions;
         });
         gradeSelects.forEach(sel => {
-            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'الصف: الكل' : 'اختر الصف'}</option>` + gradeOptions;
+            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? Lang.t('filter_grade_all') : Lang.t('select_grade')}</option>` + gradeOptions;
         });
 
         // Populate Contract Templates
@@ -2598,6 +2642,54 @@ ${link}
             console.error('Download Error:', error);
             this.showNotification('❌ فشل تحميل الملف، حاول مرة أخرى');
         }
+    },
+
+    applyTranslations() {
+        // 1. Translate Sidebar Tabs
+        document.querySelectorAll('.nav-link').forEach(link => {
+            const page = link.dataset.page;
+            const key = 'nav_' + page;
+            if (page && Lang.t(key) !== key) {
+                // Replace text node only, keep icon
+                link.childNodes.forEach(node => {
+                    if (node.nodeType === 3 && node.textContent.trim().length > 0) {
+                        node.textContent = ' ' + Lang.t(key) + ' ';
+                    }
+                });
+            }
+        });
+
+        // 2. Translate Static Buttons & Elements by ID
+        const elementMap = {
+            'newStudentBtn': 'btn_new_student',
+            'deleteSelectedBtn': 'btn_delete_selected',
+            'deleteSelectedBtnMain': 'btn_delete_selected',
+            'cancelBtn': 'btn_cancel',
+            'closeModalBtn': 'btn_close'
+        };
+
+        for (const [id, key] of Object.entries(elementMap)) {
+            const el = document.getElementById(id);
+            if (el) {
+                // If element has children (icons), replace text node only
+                if (el.children.length > 0) {
+                    el.childNodes.forEach(node => {
+                        if (node.nodeType === 3 && node.textContent.trim().length > 0) {
+                            node.textContent = ' ' + Lang.t(key) + ' ';
+                        }
+                    });
+                } else {
+                    el.textContent = Lang.t(key);
+                }
+            }
+        }
+
+        // 3. Translate Placeholders
+        const searchInputs = ['studentSearch', 'studentSearchAll', 'signedContractSearch'];
+        searchInputs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.placeholder = Lang.t('search_placeholder');
+        });
     }
 };
 
@@ -2634,6 +2726,7 @@ document.addEventListener('DOMContentLoaded', () => {
     UI.checkLogin(); // Check if already logged in
     UI.initTheme();  // Initialize Dark Mode
     UI.applyBranding(); // Apply school identity
+    UI.applyTranslations(); // Apply translations to static elements
 
     // Inject Language Toggle
     const nav = document.querySelector('.navbar-end') || document.querySelector('.navbar') || document.body;

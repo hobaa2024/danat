@@ -682,7 +682,9 @@ const ContractUI = {
         const list = document.getElementById('pdfVariablesList');
         if (!list) return;
 
-        const isEn = (localStorage.getItem('app_lang') || 'ar') === 'en';
+        // Use Lang object if available, otherwise fallback
+        const t = (typeof Lang !== 'undefined') ? (k) => Lang.t(k) : (k) => k;
+        const isEn = (typeof Lang !== 'undefined') && Lang.current === 'en';
 
         // Standard placeholders
         const standard = [
