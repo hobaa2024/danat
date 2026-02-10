@@ -336,28 +336,50 @@ class ContractManager {
         const pages = pdfDoc.getPages();
 
         // --- Bulletproof Arabic Engine ---
-        const fixText = (text) => {
+        const fixArabic = (text) => {
             if (!text) return "";
             try {
                 let str = String(text).trim();
-                const hasAr = /[\u0600-\u06FF]/.test(str);
-                if (!hasAr) return str;
+                // Check for Arabic characters (including presentation forms)
+                const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
+                if (!hasArabic) return str;
 
-                // 1. Join Characters (Critical fix forDisconnected letters)
+                // 1. Reshape
                 if (typeof ArabicReshaper !== 'undefined') {
-                    str = ArabicReshaper.reshape(str);
+                    // Try to find the reshape function
+                    if (typeof ArabicReshaper.convertArabic === 'function') {
+                        str = ArabicReshaper.convertArabic(str);
+                    } else if (typeof ArabicReshaper.reshape === 'function') {
+                        str = ArabicReshaper.reshape(str);
+                    } else if (ArabicReshaper.ArabicReshaper && typeof ArabicReshaper.ArabicReshaper.convertArabic === 'function') {
+                        str = ArabicReshaper.ArabicReshaper.convertArabic(str);
+                    }
                 }
 
-                // 2. Reverse for RTL, but restore LTR segments (numbers/English)
+                // 2. Reverse for RTL
                 let reversed = str.split('').reverse().join('');
-                const ltrParts = reversed.match(/[a-zA-Z0-9\s.@:/+]{2,}/g);
-                if (ltrParts) {
-                    ltrParts.forEach(part => {
-                        reversed = reversed.replace(part, part.split('').reverse().join(''));
-                    });
-                }
+
+                // 3. Fix LTR segments (numbers, english words)
+                // This regex matches sequences of non-Arabic characters that should be LTR
+                // We re-reverse them to restore their order
+                const ltrPattern = /[a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\s.,:;!?@#$%^&*()_+\-=\[\]{}<>|/\\~`"']+/g;
+
+                reversed = reversed.replace(ltrPattern, function (match) {
+                    // Only re-reverse if it contains letters or numbers, to avoid messing up simple punctuation between Arabic words if any
+                    if (/[a-zA-Z0-9]/.test(match)) {
+                        return match.split('').reverse().join('');
+                    }
+                    // For pure punctuation/spaces, context matters, but usually in RTL text, 
+                    // if it's surrounded by Arabic, it flows RTL. 
+                    // If it's "123", it flows LTR.
+                    return match;
+                });
+
                 return reversed;
-            } catch (e) { return String(text); }
+            } catch (e) {
+                console.error("Arabic fix error:", e);
+                return text;
+            }
         };
 
         const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
@@ -430,11 +452,12 @@ class ContractManager {
             } else {
                 try {
                     const size = 11;
-                    const fixed = fixText(text);
+                    const fixed = fixArabic(text);
                     const tw = customFont.widthOfTextAtSize(fixed, size);
                     let dx = pdfX + (fW - tw) / 2;
                     if (tw > fW * 0.9) dx = pdfX + fW - tw - 5;
                     page.drawText(fixed, { x: dx, y: pdfY - (fH / 2) - 3, size, font: customFont, color: rgb(0, 0, 0) });
+                    page.drawText(fixed, { x: dx, y: pdfY - (fH / 2) - 4, size, font: customFont, color: rgb(0, 0, 0) });
                 } catch (err) { }
             }
         }
