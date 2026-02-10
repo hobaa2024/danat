@@ -1,104 +1,3 @@
-// Language Manager
-const Lang = {
-    current: localStorage.getItem('app_lang') || 'ar',
-    toggle: function () {
-        this.current = this.current === 'ar' ? 'en' : 'ar';
-        localStorage.setItem('app_lang', this.current);
-        location.reload();
-    },
-    t: function (key) {
-        return (this.dict[this.current] && this.dict[this.current][key]) || key;
-    },
-    dict: {
-        ar: {
-            status_pending: 'قيد الانتظار',
-            status_sent: 'تم الإرسال',
-            status_signed: 'تم التوقيع',
-            status_verified: 'موثق',
-            action_send: 'إرسال',
-            action_remind: 'تذكير',
-            action_verify: 'توثيق',
-            action_download: 'تحميل',
-            action_edit: 'تعديل',
-            action_copy_link: 'نسخ الرابط',
-            action_preview: 'معاينة',
-            action_unsign: 'إلغاء التوقيع',
-            action_delete: 'حذف',
-            no_contracts: 'لا توجد عقود موثقة حالياً',
-            no_results: 'لا توجد نتائج للبحث',
-            verify_now: 'توثيق الآن',
-            confirm_verify: 'تأكيد استلام وتوثيق العقد؟',
-            verified_success: '✅ تم توثيق العقد بنجاح',
-            unknown: 'غير معروف',
-            // Navigation
-            nav_dashboard: 'لوحة التحكم',
-            nav_students: 'الطلاب',
-            nav_contracts: 'العقود',
-            nav_settings: 'الإعدادات',
-            // Buttons & UI
-            btn_new_student: 'تسجيل طالب جديد',
-            btn_delete_selected: 'حذف المحدد',
-            btn_save: 'حفظ',
-            btn_cancel: 'إلغاء',
-            btn_close: 'إغلاق',
-            search_placeholder: 'بحث...',
-            // Dropdowns
-            select_level: 'اختر المرحلة',
-            select_grade: 'اختر الصف',
-            filter_level_all: 'المرحلة: الكل',
-            filter_grade_all: 'الصف: الكل',
-            // Messages
-            msg_no_pending: '✨ ممتاز! لا توجد عقود معلقة حالياً',
-            msg_no_students: 'لا يوجد طلاب مسجلين',
-            msg_confirm_delete: 'هل أنت متأكد من حذف هذا الطالب نهائياً؟',
-            msg_select_students: '⚠️ يرجى اختيار طلاب للحذف'
-        },
-        en: {
-            status_pending: 'Pending',
-            status_sent: 'Sent',
-            status_signed: 'Signed',
-            status_verified: 'Verified',
-            action_send: 'Send',
-            action_remind: 'Remind',
-            action_verify: 'Verify',
-            action_download: 'Download',
-            action_edit: 'Edit',
-            action_copy_link: 'Copy Link',
-            action_preview: 'Preview',
-            action_unsign: 'Unsign',
-            action_delete: 'Delete',
-            no_contracts: 'No verified contracts currently',
-            no_results: 'No search results',
-            verify_now: 'Verify Now',
-            confirm_verify: 'Confirm contract verification?',
-            verified_success: '✅ Contract verified successfully',
-            unknown: 'Unknown',
-            // Navigation
-            nav_dashboard: 'Dashboard',
-            nav_students: 'Students',
-            nav_contracts: 'Contracts',
-            nav_settings: 'Settings',
-            // Buttons & UI
-            btn_new_student: 'New Student',
-            btn_delete_selected: 'Delete Selected',
-            btn_save: 'Save',
-            btn_cancel: 'Cancel',
-            btn_close: 'Close',
-            search_placeholder: 'Search...',
-            // Dropdowns
-            select_level: 'Select Level',
-            select_grade: 'Select Grade',
-            filter_level_all: 'Level: All',
-            filter_grade_all: 'Grade: All',
-            // Messages
-            msg_no_pending: '✨ Great! No pending contracts.',
-            msg_no_students: 'No students registered.',
-            msg_confirm_delete: 'Are you sure you want to permanently delete this student?',
-            msg_select_students: '⚠️ Please select students to delete.'
-        }
-    }
-};
-
 // Database Management using LocalStorage
 class DatabaseManager {
     constructor() {
@@ -297,8 +196,7 @@ class DatabaseManager {
                 { id: 'nationalId', label: 'رقم الهوية', type: 'number' }
             ],
             nationalContractId: null, // ID for the national track contract
-            diplomaContractId: null,   // ID for the diploma track contract
-            smsConfig: { url: '', enabled: false, messageTemplate: 'عقد الطالب {student}: {link}' }
+            diplomaContractId: null   // ID for the diploma track contract
         };
         try {
             const savedRaw = localStorage.getItem('appSettings');
@@ -472,7 +370,7 @@ const UI = {
         const ids = Array.from(checks).map(cb => cb.value);
 
         if (ids.length === 0) {
-            this.showNotification(Lang.t('msg_select_students'));
+            this.showNotification('⚠️ يرجى اختيار طلاب للحذف');
             return;
         }
 
@@ -491,7 +389,7 @@ const UI = {
 
     openModal() {
         const title = document.getElementById('modalTitle');
-        if (title) title.textContent = Lang.current === 'en' ? 'Register New Student' : 'تسجيل طالب جديد';
+        if (title) title.textContent = 'تسجيل طالب جديد';
 
         const form = document.getElementById('studentForm');
         if (form) {
@@ -690,7 +588,7 @@ const UI = {
                 .slice(0, 5);
 
             if (displayStudents.length === 0) {
-                this.tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px; color: #10b981; font-weight:bold;">${Lang.t('msg_no_pending')}</td></tr>`;
+                this.tableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #10b981; font-weight:bold;">✨ ممتاز! لا توجد عقود معلقة حالياً</td></tr>';
             } else {
                 displayStudents.forEach(student => {
                     const row = document.createElement('tr');
@@ -705,7 +603,7 @@ const UI = {
         if (allTableBody) {
             allTableBody.innerHTML = '';
             if (students.length === 0) {
-                allTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px;">${Lang.t('msg_no_students')}</td></tr>`;
+                allTableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px;">لا يوجد طلاب مسجلين</td></tr>';
             } else {
                 students.forEach(student => {
                     const row = document.createElement('tr');
@@ -743,7 +641,7 @@ const UI = {
         contractsTableBody.innerHTML = '';
 
         if (students.length === 0) {
-            const message = searchTerm ? Lang.t('no_results') : Lang.t('no_contracts');
+            const message = searchTerm ? 'لا توجد نتائج للبحث' : 'لا توجد عقود موثقة حالياً';
             contractsTableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 20px;">${message}</td></tr>`;
             return;
         }
@@ -762,13 +660,13 @@ const UI = {
                 <td>
                     <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                         ${student.contractStatus === 'signed' ? `
-                            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="${Lang.t('verify_now')}" style="color: #38b2ac;">
+                            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="توثيق الآن" style="color: #38b2ac;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                             </button>` : ''}
-                        <button class="btn-icon" onclick="UI.previewContract('${student.id}')" title="${Lang.t('action_preview')}" style="color: #3b82f6;">
+                        <button class="btn-icon" onclick="UI.previewContract('${student.id}')" title="معاينة" style="color: #3b82f6;">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                         </button>
-                        <button class="btn-icon" onclick="UI.downloadContractPdf('${student.id}')" title="${Lang.t('action_download')}" style="color: #f59e0b;">
+                        <button class="btn-icon" onclick="UI.downloadContractPdf('${student.id}')" title="تحميل" style="color: #f59e0b;">
                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         </button>
                     </div>
@@ -788,7 +686,7 @@ const UI = {
 
         // Verification Button (Green) - only for 'signed' status
         const verifyBtn = student.contractStatus === 'signed' ? `
-            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="${Lang.t('action_verify')}" style="color: #38b2ac;">
+            <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="تأكيد الاستلام والتوثيق" style="color: #38b2ac;">
                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             </button>
         ` : '';
@@ -830,25 +728,25 @@ const UI = {
                     ${(() => {
                 // Determine Primary Action
                 if (student.contractStatus === 'pending') {
-                    return `<button class="action-btn-main send" onclick="UI.sendContract('${student.id}')" title="${Lang.t('action_send')}">
+                    return `<button class="action-btn-main send" onclick="UI.sendContract('${student.id}')" title="إرسال العقد">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                                ${Lang.t('action_send')}
+                                إرسال
                             </button>`;
                 } else if (student.contractStatus === 'sent') {
-                    return `<button class="action-btn-main remind" onclick="UI.remindParent('${student.id}')" title="${Lang.t('action_remind')}">
+                    return `<button class="action-btn-main remind" onclick="UI.remindParent('${student.id}')" title="إرسال تذكير">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                                ${Lang.t('action_remind')}
+                                تذكير
                             </button>`;
                 } else if (student.contractStatus === 'signed') {
-                    return `<button class="action-btn-main verify" onclick="markAsSigned('${student.id}')" title="${Lang.t('action_verify')}">
+                    return `<button class="action-btn-main verify" onclick="markAsSigned('${student.id}')" title="توثيق العقد">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                                ${Lang.t('action_verify')}
+                                توثيق
                             </button>`;
                 } else {
                     // Verified
-                    return `<button class="action-btn-main verify" onclick="UI.downloadContractPdf('${student.id}')" title="${Lang.t('action_download')}">
+                    return `<button class="action-btn-main verify" onclick="UI.downloadContractPdf('${student.id}')" title="تحميل">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                ${Lang.t('action_download')}
+                                تحميل
                             </button>`;
                 }
             })()}
@@ -859,28 +757,28 @@ const UI = {
                         </button>
                         <div id="${menuId}" class="action-dropdown-menu">
                             <button class="action-dropdown-item" onclick="UI.editStudent('${student.id}')">
-                                <span style="width:20px">✏️</span> ${Lang.t('action_edit')}
+                                <span style="width:20px">✏️</span> تعديل
                             </button>
                             
                             ${student.contractStatus !== 'signed' && student.contractStatus !== 'verified' ? `
                             <button class="action-dropdown-item" onclick="UI.copyContractLink('${student.id}')">
-                                <span style="width:20px">🔗</span> ${Lang.t('action_copy_link')}
+                                <span style="width:20px">🔗</span> نسخ الرابط
                             </button>
                             ` : ''}
 
                             ${student.contractStatus === 'signed' || student.contractStatus === 'verified' ? `
                             <button class="action-dropdown-item" onclick="UI.previewContract('${student.id}')">
-                                <span style="width:20px">👁️</span> ${Lang.t('action_preview')}
+                                <span style="width:20px">👁️</span> معاينة
                             </button>
                             <button class="action-dropdown-item" onclick="UI.deleteSignedContent('${student.id}')" style="color:#d97706">
-                                <span style="width:20px">↩️</span> ${Lang.t('action_unsign')}
+                                <span style="width:20px">↩️</span> إلغاء التوقيع
                             </button>
                             ` : ''}
 
                             <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
                             
                             <button class="action-dropdown-item delete" onclick="UI.deleteStudent('${student.id}')">
-                                <span style="width:20px">🗑️</span> ${Lang.t('action_delete')}
+                                <span style="width:20px">🗑️</span> حذف
                             </button>
                         </div>
                     </div>
@@ -965,12 +863,12 @@ const UI = {
 
     getStatusBadge(status) {
         const badges = {
-            'pending': `<span class="status-badge status-pending">${Lang.t('status_pending')}</span>`,
-            'sent': `<span class="status-badge status-sent">${Lang.t('status_sent')}</span>`,
-            'signed': `<span class="status-badge status-signed">${Lang.t('status_signed')}</span>`,
-            'verified': `<span class="status-badge status-verified">${Lang.t('status_verified')}</span>`
+            'pending': '<span class="status-badge status-pending">قيد الانتظار</span>',
+            'sent': '<span class="status-badge status-sent">تم الإرسال</span>',
+            'signed': '<span class="status-badge status-signed">تم التوقيع</span>',
+            'verified': '<span class="status-badge status-verified">موثق</span>'
         };
-        return badges[status] || `<span class="status-badge">${Lang.t('unknown')}</span>`;
+        return badges[status] || '<span class="status-badge">غير معروف</span>';
     },
     generateContractLink(student) {
         const settings = db.getSettings();
@@ -1579,43 +1477,12 @@ ${link}
         const url = `https://wa.me/${student.parentWhatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
         window.open(url, '_blank');
 
-        // Send SMS if enabled
-        this.sendSMS(student, link);
-
         // PRESERVE SIGNATURE: Only update to 'sent' if it's currently 'pending'
         // If it was already 'signed' or 'verified', don't set it back to 'sent'
         if (student.contractStatus === 'pending') {
             db.updateStudentStatus(id, 'sent');
             this.updateStats();
             this.renderStudents();
-        }
-    },
-
-    async sendSMS(student, contractLink) {
-        const settings = db.getSettings();
-        const config = settings.smsConfig;
-
-        if (!config || !config.enabled || !config.url) return;
-
-        const phone = student.parentWhatsapp.replace(/[^\d]/g, '');
-        if (!phone) return;
-
-        let msg = config.messageTemplate || 'عقد الطالب {student}: {link}';
-        msg = msg.replace('{student}', student.studentName).replace('{link}', contractLink);
-
-        // Replace placeholders in URL
-        const finalUrl = config.url
-            .replace('{phone}', phone)
-            .replace('{message}', encodeURIComponent(msg));
-
-        try {
-            // Attempt to send
-            fetch(finalUrl, { mode: 'no-cors' }).then(() => {
-                console.log('SMS Request Sent');
-                this.showNotification(Lang.t('sms_sent'));
-            }).catch(e => console.warn('SMS Error', e));
-        } catch (e) {
-            console.error('SMS Exception', e);
         }
     },
 
@@ -1726,13 +1593,6 @@ ${link}
         const adminUser = document.getElementById('adminUsernameSetting')?.value;
         const adminPass = document.getElementById('adminPassSetting')?.value;
 
-        // SMS Settings
-        const smsConfig = {
-            url: document.getElementById('smsUrlInput')?.value || '',
-            messageTemplate: document.getElementById('smsTemplateInput')?.value || '',
-            enabled: document.getElementById('smsEnableCheck')?.checked || false
-        };
-
         const currentSettings = db.getSettings();
 
         // Safe capture of contract IDs (don't overwrite with null if element is missing)
@@ -1751,8 +1611,7 @@ ${link}
             schoolLogo: logo.startsWith('data:') ? logo : (currentSettings.schoolLogo || ''),
             stampImage: stampImage.startsWith('data:') ? stampImage : (currentSettings.stampImage || ''),
             nationalContractId: (nationalEl && nationalEl.value) ? nationalEl.value : currentSettings.nationalContractId,
-            diplomaContractId: (diplomaEl && diplomaEl.value) ? diplomaEl.value : currentSettings.diplomaContractId,
-            smsConfig: smsConfig
+            diplomaContractId: (diplomaEl && diplomaEl.value) ? diplomaEl.value : currentSettings.diplomaContractId
         };
 
         if (adminUser) settings.adminUsername = adminUser;
@@ -1997,10 +1856,10 @@ ${link}
         const gradeSelects = [document.getElementById('studentGrade'), document.getElementById('filterGrade')];
 
         levelSelects.forEach(sel => {
-            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? Lang.t('filter_level_all') : Lang.t('select_level')}</option>` + levelOptions;
+            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'المرحلة: الكل' : 'اختر المرحلة'}</option>` + levelOptions;
         });
         gradeSelects.forEach(sel => {
-            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? Lang.t('filter_grade_all') : Lang.t('select_grade')}</option>` + gradeOptions;
+            if (sel) sel.innerHTML = `<option value="">${sel.id.includes('filter') ? 'الصف: الكل' : 'اختر الصف'}</option>` + gradeOptions;
         });
 
         // Populate Contract Templates
@@ -2018,48 +1877,8 @@ ${link}
         }
     },
 
-    injectSmsSettingsUI() {
-        if (document.getElementById('smsUrlInput')) return;
-
-        const phoneInput = document.getElementById('schoolPhone');
-        if (!phoneInput) return;
-
-        // Find a good place to insert (after the phone number field)
-        const container = phoneInput.closest('.form-row') || phoneInput.parentElement.parentElement;
-
-        const section = document.createElement('div');
-        section.className = 'settings-section';
-        section.style.cssText = 'margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;';
-
-        section.innerHTML = `
-            <h3 style="font-size:1.1rem; margin-bottom:15px; color:var(--primary-color);">${Lang.t('lbl_sms_settings')}</h3>
-            <div class="form-row" style="display:flex; gap:15px; flex-wrap:wrap;">
-                <div class="form-group" style="flex:1; min-width:300px;">
-                    <label>${Lang.t('lbl_sms_url')}</label>
-                    <input type="text" id="smsUrlInput" placeholder="https://api.sms.com/send?user=...&mobile={phone}&msg={message}" style="direction:ltr; text-align:left;">
-                    <small style="color:#718096; font-size:0.8rem;">${Lang.t('sms_url_hint')}</small>
-                </div>
-            </div>
-            <div class="form-row" style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px;">
-                <div class="form-group" style="flex:1;">
-                    <label>${Lang.t('lbl_sms_template')}</label>
-                    <input type="text" id="smsTemplateInput" placeholder="عقد الطالب {student}: {link}">
-                </div>
-                <div class="form-group" style="width:auto; display:flex; align-items:center; padding-top:25px;">
-                    <label style="display:flex; align-items:center; cursor:pointer;">
-                        <input type="checkbox" id="smsEnableCheck" style="width:18px; height:18px; margin-left:8px;">
-                        ${Lang.t('lbl_sms_enable')}
-                    </label>
-                </div>
-            </div>
-        `;
-
-        container.parentNode.insertBefore(section, container.nextSibling);
-    },
-
     loadSettingsPage() {
         try {
-            this.injectSmsSettingsUI(); // Inject SMS UI first
             this.populateDynamicSelects(); // Ensure dropdowns are populated first!
             const settings = db.getSettings();
 
@@ -2073,13 +1892,6 @@ ${link}
             // Load contract assignment settings
             if (document.getElementById('nationalContractSetting')) document.getElementById('nationalContractSetting').value = settings.nationalContractId || '';
             if (document.getElementById('diplomaContractSetting')) document.getElementById('diplomaContractSetting').value = settings.diplomaContractId || '';
-
-            // Load SMS Settings
-            if (document.getElementById('smsUrlInput')) {
-                document.getElementById('smsUrlInput').value = settings.smsConfig?.url || '';
-                document.getElementById('smsTemplateInput').value = settings.smsConfig?.messageTemplate || 'عقد الطالب {student}: {link}';
-                document.getElementById('smsEnableCheck').checked = settings.smsConfig?.enabled || false;
-            }
 
             // Logo
             if (document.getElementById('settingsLogoPreview') && settings.schoolLogo) {
@@ -2459,11 +2271,11 @@ ${link}
     },
 
     markAsSigned(id) {
-        if (confirm(Lang.t('confirm_verify'))) {
+        if (confirm('تأكيد استلام وتوثيق العقد؟')) {
             db.updateStudentStatus(id, 'verified');
             this.updateStats();
             this.renderStudents();
-            this.showNotification(Lang.t('verified_success'));
+            this.showNotification('✅ تم توثيق العقد بنجاح');
         }
     },
 
@@ -2729,54 +2541,6 @@ ${link}
             console.error('Download Error:', error);
             this.showNotification('❌ فشل تحميل الملف، حاول مرة أخرى');
         }
-    },
-
-    applyTranslations() {
-        // 1. Translate Sidebar Tabs
-        document.querySelectorAll('.nav-link').forEach(link => {
-            const page = link.dataset.page;
-            const key = 'nav_' + page;
-            if (page && Lang.t(key) !== key) {
-                // Replace text node only, keep icon
-                link.childNodes.forEach(node => {
-                    if (node.nodeType === 3 && node.textContent.trim().length > 0) {
-                        node.textContent = ' ' + Lang.t(key) + ' ';
-                    }
-                });
-            }
-        });
-
-        // 2. Translate Static Buttons & Elements by ID
-        const elementMap = {
-            'newStudentBtn': 'btn_new_student',
-            'deleteSelectedBtn': 'btn_delete_selected',
-            'deleteSelectedBtnMain': 'btn_delete_selected',
-            'cancelBtn': 'btn_cancel',
-            'closeModalBtn': 'btn_close'
-        };
-
-        for (const [id, key] of Object.entries(elementMap)) {
-            const el = document.getElementById(id);
-            if (el) {
-                // If element has children (icons), replace text node only
-                if (el.children.length > 0) {
-                    el.childNodes.forEach(node => {
-                        if (node.nodeType === 3 && node.textContent.trim().length > 0) {
-                            node.textContent = ' ' + Lang.t(key) + ' ';
-                        }
-                    });
-                } else {
-                    el.textContent = Lang.t(key);
-                }
-            }
-        }
-
-        // 3. Translate Placeholders
-        const searchInputs = ['studentSearch', 'studentSearchAll', 'signedContractSearch'];
-        searchInputs.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.placeholder = Lang.t('search_placeholder');
-        });
     }
 };
 
@@ -2813,21 +2577,6 @@ document.addEventListener('DOMContentLoaded', () => {
     UI.checkLogin(); // Check if already logged in
     UI.initTheme();  // Initialize Dark Mode
     UI.applyBranding(); // Apply school identity
-    UI.applyTranslations(); // Apply translations to static elements
-
-    // Inject Language Toggle
-    const nav = document.querySelector('.navbar-end') || document.querySelector('.navbar') || document.body;
-    const langBtn = document.createElement('button');
-    langBtn.className = 'btn-icon';
-    langBtn.style.marginLeft = '10px';
-    langBtn.style.fontSize = '1.2rem';
-    langBtn.innerHTML = Lang.current === 'ar' ? '🇺🇸 EN' : '🇸🇦 AR';
-    langBtn.title = 'Switch Language';
-    langBtn.onclick = () => Lang.toggle();
-
-    if (nav.classList.contains('navbar-end')) nav.prepend(langBtn);
-    else if (nav.classList.contains('navbar')) nav.appendChild(langBtn);
-    else { langBtn.style.position = 'fixed'; langBtn.style.bottom = '10px'; langBtn.style.left = '10px'; langBtn.style.zIndex = '9999'; document.body.appendChild(langBtn); }
 
     // 2. Tab Navigation
     const navLinks = document.querySelectorAll('.nav-link');

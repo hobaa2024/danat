@@ -1,34 +1,3 @@
-// Language Manager
-const Lang = {
-    current: localStorage.getItem('app_lang') || 'ar',
-    toggle: function () {
-        this.current = this.current === 'ar' ? 'en' : 'ar';
-        localStorage.setItem('app_lang', this.current);
-        location.reload();
-    },
-    t: function (key) {
-        return (this.dict[this.current] && this.dict[this.current][key]) || key;
-    },
-    dict: {
-        ar: {
-            signed_title: 'تم التوقيع بنجاح! 🎉',
-            signed_subtitle: 'شكراً لك! تم توقيع العقد وإرساله بنجاح.',
-            already_signed_title: 'تم توقيع العقد مسبقاً',
-            already_signed_subtitle: 'تم توقيع هذا العقد وإرساله بنجاح مسبقاً.',
-            download_pdf: '📥 تحميل العقد المكتمل (PDF)',
-            print_contract: '🖨️ طباعة العقد'
-        },
-        en: {
-            signed_title: 'Signed Successfully! 🎉',
-            signed_subtitle: 'Thank you! The contract has been signed and sent successfully.',
-            already_signed_title: 'Contract Already Signed',
-            already_signed_subtitle: 'This contract has already been signed and submitted.',
-            download_pdf: '📥 Download Completed Contract (PDF)',
-            print_contract: '🖨️ Print Contract'
-        }
-    }
-};
-
 // --- SCHOOL SETTINGS ---
 const SCHOOL_WHATSAPP = '966590000000';
 const SCHOOL_STAMP_IMG = 'assets/stamp.png';
@@ -528,8 +497,8 @@ function showAlreadySignedSimplified(student) {
     if (card) {
         card.innerHTML = `
             <div class="success-icon" style="background: var(--success-gradient);">📝</div>
-            <h2 class="success-title">${Lang.t('already_signed_title')}</h2>
-            <p class="success-subtitle" style="margin-bottom: 2rem;">${Lang.t('already_signed_subtitle')}</p>
+            <h2 class="success-title">تم توقيع العقد مسبقاً</h2>
+            <p class="success-subtitle" style="margin-bottom: 2rem;">تم توقيع هذا العقد وإرساله بنجاح مسبقاً.</p>
             
             <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:var(--text-muted); font-weight:600;">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
@@ -537,8 +506,8 @@ function showAlreadySignedSimplified(student) {
             </div>
 
             <div class="success-actions">
-                <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">${Lang.t('download_pdf')}</button>
-                <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">${Lang.t('print_contract')}</button>
+                <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">📥 تحميل العقد المكتمل (PDF)</button>
+                <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">🖨️ طباعة العقد</button>
             </div>
         `;
     }
@@ -560,8 +529,8 @@ function showSuccessAfterSigning(student) {
     if (card) {
         card.innerHTML = `
             <div class="success-icon" style="background: var(--success-gradient);">✓</div>
-            <h2 class="success-title">${Lang.t('signed_title')}</h2>
-            <p class="success-subtitle" style="margin-bottom: 2rem;">${Lang.t('signed_subtitle')}</p>
+            <h2 class="success-title">تم التوقيع بنجاح! 🎉</h2>
+            <p class="success-subtitle" style="margin-bottom: 2rem;">شكراً لك! تم توقيع العقد وإرساله بنجاح.</p>
             
             <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:var(--text-muted); font-weight:600;">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
@@ -569,8 +538,8 @@ function showSuccessAfterSigning(student) {
             </div>
 
             <div class="success-actions">
-                <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">${Lang.t('download_pdf')}</button>
-                <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">${Lang.t('print_contract')}</button>
+                <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">📥 تحميل العقد المكتمل (PDF)</button>
+                <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">🖨️ طباعة العقد</button>
             </div>
         `;
     }
@@ -669,7 +638,7 @@ function setupPdfDownload(studentName, contractNo) {
                 link.download = `عقد_${studentName}.pdf`;
                 link.click();
                 this.innerHTML = '✓ تم التحميل';
-                setTimeout(() => { this.disabled = false; this.innerHTML = Lang.t('download_pdf'); }, 3000);
+                setTimeout(() => { this.disabled = false; this.innerHTML = '📥 تحميل العقد المكتمل (PDF)'; }, 3000);
             } else {
                 // Use html2pdf for normal text contracts
                 const pdfHtml = getContractPdfHtml(studentName, contractNo);
@@ -753,7 +722,7 @@ function setupPdfDownload(studentName, contractNo) {
                     }).save().then(() => {
                         this.innerHTML = '✓ تم التحميل';
                         setTimeout(cleanup, 1000);
-                        setTimeout(() => { this.disabled = false; this.innerHTML = Lang.t('download_pdf'); }, 3000);
+                        setTimeout(() => { this.disabled = false; this.innerHTML = '📥 تحميل العقد المكتمل (PDF)'; }, 3000);
                     });
                 }, 3500); // 3.5 seconds delay for absolute certainty
             }
@@ -1274,16 +1243,5 @@ async function generatePdfFromTemplate(template, studentData) {
     return await pdfDoc.save();
 }
 
-window.addEventListener('load', async () => {
-    const std = await loadStudentData();
-    if (std) { resizeCanvas(); updateProgress(); }
-
-    // Inject Language Toggle
-    const langBtn = document.createElement('button');
-    langBtn.className = 'btn btn-secondary';
-    langBtn.style.cssText = 'position:fixed; top:10px; left:10px; z-index:9999; padding:5px 10px; font-size:12px;';
-    langBtn.innerHTML = Lang.current === 'ar' ? '🇺🇸 English' : '🇸🇦 عربي';
-    langBtn.onclick = () => Lang.toggle();
-    document.body.appendChild(langBtn);
-});
+window.addEventListener('load', async () => { const std = await loadStudentData(); if (std) { resizeCanvas(); updateProgress(); } });
 window.addEventListener('resize', resizeCanvas);
