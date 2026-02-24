@@ -181,7 +181,7 @@ class ContractManager {
                 return;
             }
 
-            if (target === 'الهوية' || target === 'صورةالهوية') {
+            if (target === 'الهوية' || target === 'صورةالهوية' || target === 'مكانالهوية') {
                 const idSrc = studentData.idImage || studentData.idCardImage;
                 const idImg = idSrc
                     ? `<img src="${idSrc}" style="max-height:150px; max-width:300px; display:block; margin:10px 0; border:1px solid #ccc;">`
@@ -313,8 +313,20 @@ class ContractManager {
         // Load heavy data if missing
         if (!contractTemplate.pdfData && contractTemplate.hasLargePdf) {
             const data = await this.getPdfFromDB(contractTemplate.id);
-            if (data) contractTemplate.pdfData = data;
-            else throw new Error("تعذر تحميل ملف PDF من التخزين المحلي");
+            if (data) {
+                contractTemplate.pdfData = data;
+            } else if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                // Device Recovery: Try Cloud if IndexedDB is empty
+                const remote = await CloudDB.getContractTemplate(contractTemplate.id);
+                if (remote && remote.pdfData) {
+                    contractTemplate.pdfData = remote.pdfData;
+                    this.savePdfToDB(contractTemplate.id, remote.pdfData); // Background save
+                } else {
+                    throw new Error("تعذر تحميل ملف PDF من التخزين المحلي أو السحابي");
+                }
+            } else {
+                throw new Error("تعذر تحميل ملف PDF من التخزين المحلي");
+            }
         }
 
         if (!contractTemplate.pdfData || !contractTemplate.pdfFields) {
@@ -377,47 +389,23 @@ class ContractManager {
 
         const pages = pdfDoc.getPages();
 
-        // --- Bulletproof Arabic Engine ---
         const fixArabic = (text) => {
             if (!text) return "";
             try {
                 let str = String(text).trim();
-                // Check for Arabic characters (including presentation forms)
-                const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
+                const hasArabic = /[\u0600-\u06FF]/.test(str);
                 if (!hasArabic) return str;
 
-                // 1. Reshape
-                if (typeof ArabicReshaper !== 'undefined') {
-                    // Try to find the reshape function
-                    if (typeof ArabicReshaper.convertArabic === 'function') {
-                        str = ArabicReshaper.convertArabic(str);
-                    } else if (typeof ArabicReshaper.reshape === 'function') {
-                        str = ArabicReshaper.reshape(str);
-                    } else if (ArabicReshaper.ArabicReshaper && typeof ArabicReshaper.ArabicReshaper.convertArabic === 'function') {
-                        str = ArabicReshaper.ArabicReshaper.convertArabic(str);
-                    }
+                // 1. Reshape الحروف (مشتبكة)
+                const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
+                if (Reshaper) {
+                    if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
+                    else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
                 }
 
-                // 2. Reverse for RTL
-                let reversed = str.split('').reverse().join('');
-
-                // 3. Fix LTR segments (numbers, english words)
-                // This regex matches sequences of non-Arabic characters that should be LTR
-                // We re-reverse them to restore their order
-                const ltrPattern = /[a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\s.,:;!?@#$%^&*()_+\-=\[\]{}<>|/\\~`"']+/g;
-
-                reversed = reversed.replace(ltrPattern, function (match) {
-                    // Only re-reverse if it contains letters or numbers, to avoid messing up simple punctuation between Arabic words if any
-                    if (/[a-zA-Z0-9]/.test(match)) {
-                        return match.split('').reverse().join('');
-                    }
-                    // For pure punctuation/spaces, context matters, but usually in RTL text, 
-                    // if it's surrounded by Arabic, it flows RTL. 
-                    // If it's "123", it flows LTR.
-                    return match;
-                });
-
-                return reversed;
+                // 2. DO NOT Reverse for modern PDF readers with Cairo font
+                // Keeping same logic as contract.js for consistency
+                return str;
             } catch (e) {
                 console.error("Arabic fix error:", e);
                 return text;
@@ -428,44 +416,56 @@ class ContractManager {
 
         for (const field of contractTemplate.pdfFields) {
             const placeholder = field.variable;
-            let text = null; // Start with null to indicate no value found yet
+            let text = null;
             let isImage = false;
             const target = cleanVar(placeholder);
 
             // Variable Mapping
             // Unified Variable Mapping (from contract.js for consistency)
-            if (target === 'اسمالطالب') text = studentData.studentName || '';
+            if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
             else if (target === 'اسموليالامر' || target === 'اسموليالأمر' || target === 'الأب') text = studentData.parentName || '';
             else if (target === 'المسار' || target === 'المسارالتعليمي') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-            else if (target === 'الصف') text = studentData.studentGrade || '';
-            else if (target === 'المرحلة' || target === 'القسم') text = studentData.studentLevel || '';
-            else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || studentData.contractYear || '';
-            else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
-            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية')
+            else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || studentData.customFields?.studentGrade || '';
+            else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
+            else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
+            else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
                 text = studentData.customFields?.nationalId || studentData.nationalId || '';
-            else if (target === 'هويةوليالامر' || target === 'هويةوليالأمر') text = studentData.customFields?.parentNationalId || studentData.parentNationalId || '';
-            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'جوال' || target === 'الواتساب')
+            else if (target === 'هويةوليالامر' || target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر') text = studentData.customFields?.parentNationalId || studentData.parentNationalId || '';
+            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'جوال' || target === 'الواتساب' || target === 'رقمجوالوليالامر')
                 text = studentData.parentWhatsapp || '';
             else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
             else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG');
             else if (target === 'اليوم') { const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']; text = days[new Date().getDay()]; }
-            else if (target === 'توقيع' || target === 'التوقيع') { text = studentData.signature || studentData.signatureData; isImage = true; }
-            else if (target === 'الختم') {
-                const s = (typeof db !== 'undefined') ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
-                text = s.stampImage || window.SCHOOL_STAMP_IMAGE; isImage = true;
+            else if (target === 'توقيع' || target === 'التوقيع' || target === 'مكانالتوقيع') { text = studentData.signature || studentData.signatureData || null; isImage = true; }
+            else if (target === 'الختم' || target === 'ختمالمدرسة' || target === 'مكانالختم') {
+                const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
+                text = s.stampImage || window.SCHOOL_STAMP_IMAGE || null; isImage = true;
             }
-            else if (target === 'الهوية') { text = studentData.idImage || studentData.idCardImage; isImage = true; }
-            else if (studentData.customFields) {
-                const s = (typeof db !== 'undefined') ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
-                const f = (s.customFields || []).find(f => cleanVar(f.label) === target);
-                if (f) text = studentData.customFields[f.id] || '';
+            else if (target === 'الهوية' || target === 'مكانالهوية' || target === 'صورةالهوية' || target === 'صورهالهويه') { text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile || null; isImage = true; }
+            else {
+                // Check custom fields by label (Search in studentData.customFields)
+                if (studentData.customFields && !isImage) {
+                    try {
+                        const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
+                        const f = (s.customFields || []).find(f => cleanVar(f.label) === target);
+                        if (f) text = studentData.customFields[f.id] || '';
+                        else {
+                            // Direct search in customFields keys (Fallback)
+                            for (let key in studentData.customFields) {
+                                if (cleanVar(key) === target) {
+                                    text = studentData.customFields[key];
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (e) { }
+                }
             }
 
-            // If no mapping was found, text will be null, so we skip.
-            if (text === null) continue;
-            // If a mapping was found but the value is empty, also skip.
-            if (text === '') continue;
+            // Security: If no mapping was found or value is null/undefined/empty, skip.
+            if (!text || text === '') continue;
 
             const page = pages[field.page - 1];
             if (!page) continue;
@@ -506,6 +506,72 @@ class ContractManager {
                 } catch (err) { }
             }
         }
+        // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
+        // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
+        // 1. Identity Document
+        const docsToAppend = [];
+        if (studentData.idImage || studentData.idCardImage || studentData.uploadedFile) {
+            docsToAppend.push({
+                data: studentData.idImage || studentData.idCardImage || studentData.uploadedFile,
+                label: 'صورة الهوية'
+            });
+        }
+
+        // 2. Extra Documents
+        let extras = [];
+        if (studentData.extraDocs && Array.isArray(studentData.extraDocs)) {
+            extras = [...studentData.extraDocs];
+        }
+
+        // Fallback for older data format
+        if (studentData.birthCertImage && !extras.includes(studentData.birthCertImage)) extras.push(studentData.birthCertImage);
+        if (studentData.passportImage && !extras.includes(studentData.passportImage)) extras.push(studentData.passportImage);
+
+        extras.forEach((data, idx) => {
+            if (data) docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
+        });
+
+        const font = customFont || await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+
+        for (const doc of docsToAppend) {
+            if (doc.data) {
+                try {
+                    const page = pdfDoc.addPage([595, 842]); // A4 Size
+                    const { width, height } = page.getSize();
+                    let b64 = doc.data;
+
+                    // Header for the page
+                    page.drawText(fixArabic(doc.label), {
+                        x: width / 2 - 50, // Approximate center
+                        y: height - 50,
+                        size: 20,
+                        font: font,
+                        color: PDFLib.rgb(0, 0, 0),
+                    });
+
+                    if (b64.includes(',')) b64 = b64.split(',')[1];
+
+                    let img;
+                    try {
+                        if (doc.data.startsWith('data:image/png')) img = await pdfDoc.embedPng(b64);
+                        else img = await pdfDoc.embedJpg(b64);
+                    } catch (e1) {
+                        try { img = await pdfDoc.embedJpg(b64); } catch (e2) { continue; }
+                    }
+
+                    if (img) {
+                        const dims = img.scaleToFit(500, 700);
+                        page.drawImage(img, {
+                            x: (width - dims.width) / 2,
+                            y: (height - dims.height) / 2, // Center vertically
+                            width: dims.width,
+                            height: dims.height
+                        });
+                    }
+                } catch (e) { console.warn("Failed to append PDF page:", doc.label, e); }
+            }
+        }
+
         return await pdfDoc.save();
     }
 }

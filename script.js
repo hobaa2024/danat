@@ -1,3 +1,19 @@
+// Inject Embedded Cairo Font for Dashboard Accuracy
+if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
+    const fontStyles = `
+        @font-face {
+            font-family: 'CairoEmbedded';
+            src: url(data:font/ttf;base64,${GLOBAL_CAIRO_FONT});
+            font-weight: normal;
+            font-style: normal;
+        }
+        body, .card, .btn, .nav-link, table td, table th { font-family: 'CairoEmbedded', 'Cairo', sans-serif !important; }
+    `;
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = fontStyles;
+    document.head.appendChild(styleSheet);
+}
+
 // Database Management using LocalStorage
 class DatabaseManager {
     constructor() {
@@ -72,38 +88,52 @@ class DatabaseManager {
                 }
             }, 5000);
 
-            if (!sessionStorage.getItem('initialSyncDone')) {
-                const localStudents = this.getStudents();
-                const localTemplates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-
-                CloudDB.getStudents().then(cloudStudents => {
-                    if (cloudStudents.length === 0 && localStudents.length > 0) {
-                        console.log('☁️ Syncing students to new cloud...');
-                        CloudDB.syncLocalToCloud();
-                    }
-                });
-
-                CloudDB.getContractTemplates().then(cloudTemplates => {
-                    if (cloudTemplates.length === 0 && localTemplates.length > 0) {
-                        console.log('☁️ Syncing templates to new cloud...');
-                        localTemplates.forEach(t => CloudDB.saveContractTemplate(t));
-                    }
-                });
-
-                sessionStorage.setItem('initialSyncDone', 'true');
-            }
-
-            CloudDB.getSettings().then(cloudSettings => {
-                const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                if (!cloudSettings && Object.keys(localSettings).length > 5) {
-                    console.log('☁️ Syncing settings to new cloud...');
-                    CloudDB.saveSettings(localSettings);
-                } else if (cloudSettings) {
-                    console.log('☁️ Settings synced from cloud');
-                    localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
-                    if (typeof UI !== 'undefined' && UI.applyBranding) UI.applyBranding();
+            // 1. Sync Students
+            const localStudents = this.getStudents();
+            CloudDB.getStudents().then(cloudStudents => {
+                if (cloudStudents.length === 0 && localStudents.length > 0) {
+                    CloudDB.syncLocalToCloud();
+                } else if (cloudStudents.length > localStudents.length) {
+                    this.mergeRemoteData(cloudStudents);
                 }
             });
+
+            // 2. Sync Templates
+            CloudDB.getContractTemplates().then(cloudTemplates => {
+                const localTmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                if (cloudTemplates.length === 0 && localTmpls.length > 0) {
+                    localTmpls.forEach(t => CloudDB.saveContractTemplate(t));
+                } else if (cloudTemplates.length > 0 && (localTmpls.length === 0 || cloudTemplates.length !== localTmpls.length)) {
+                    console.log('☁️ Syncing templates from cloud...');
+                    const processTemplates = async () => {
+                        const updated = [];
+                        for (const t of cloudTemplates) {
+                            if (t.pdfData && t.pdfData.length > 50000 && typeof contractMgr !== 'undefined') {
+                                await contractMgr.savePdfToDB(t.id, t.pdfData);
+                                const lw = { ...t }; delete lw.pdfData; lw.hasLargePdf = true;
+                                updated.push(lw);
+                            } else updated.push(t);
+                        }
+                        localStorage.setItem('contractTemplates', JSON.stringify(updated));
+                        if (typeof contractMgr !== 'undefined') contractMgr.init();
+                        if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
+                    };
+                    processTemplates();
+                }
+            });
+
+            // 3. Sync Settings
+            CloudDB.getSettings().then(cloudSettings => {
+                const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                if (cloudSettings) {
+                    localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
+                    if (typeof UI !== 'undefined' && UI.applyBranding) UI.applyBranding();
+                } else if (Object.keys(localSettings).length > 5) {
+                    CloudDB.saveSettings(localSettings);
+                }
+            });
+
+            sessionStorage.setItem('initialSyncDone', 'true');
 
         }
     }
@@ -235,14 +265,18 @@ class DatabaseManager {
         }
     }
 
-    getStudents() {
+    getStudents(includeArchived = false) {
         const stored = localStorage.getItem('students');
         if (!stored) return [];
         try {
             const parsed = JSON.parse(stored);
             if (!Array.isArray(parsed)) return [];
-            // FILTER OUT GARBAGE (The fix for "undefined" appearing on refresh)
-            return parsed.filter(s => s && s.id && s.studentName && s.studentName !== 'undefined');
+
+            let filtered = parsed.filter(s => s && s.id && s.studentName && s.studentName !== 'undefined');
+            if (!includeArchived) {
+                filtered = filtered.filter(s => !s.isArchived);
+            }
+            return filtered;
         } catch (e) {
             console.error('Data Parsing Error:', e);
             return [];
@@ -256,7 +290,7 @@ class DatabaseManager {
             return;
         }
 
-        const students = this.getStudents();
+        const students = this.getStudents(true);
         const existingIndex = students.findIndex(s => String(s.id) === String(student.id));
         if (student.id && existingIndex !== -1) {
             students[existingIndex] = { ...students[existingIndex], ...student };
@@ -323,6 +357,95 @@ class DatabaseManager {
             pending: students.filter(s => s.contractStatus === 'pending').length,
             sent: students.filter(s => s.contractStatus === 'sent').length
         };
+    }
+
+    migrateStudents(nextYearLabel) {
+        console.log('🚀 Starting Annual Migration to:', nextYearLabel);
+        const students = this.getStudents(true); // Get all including archived
+        const settings = this.getSettings();
+        const gradesOrder = settings.grades || [];
+
+        const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
+        const normalizedGrades = gradesOrder.map(normalize);
+
+        let promotedCount = 0;
+        let archivedCount = 0;
+
+        const updatedStudents = students.map(student => {
+            // Only migrate active students
+            if (student.isArchived) return student;
+
+            // 1. Archive current contract if signed/verified
+            if (student.contractStatus === 'signed' || student.contractStatus === 'verified') {
+                if (!student.contractHistory) student.contractHistory = [];
+
+                // Get template to save a snapshot of the fields used at the time
+                const template = student.contractTemplateId ? contractMgr.getContract(student.contractTemplateId) : null;
+
+                student.contractHistory.push({
+                    contractYear: student.contractYear || '---',
+                    studentGrade: student.studentGrade || '',
+                    studentLevel: student.studentLevel || '',
+                    contractTitle: student.contractTitle || 'عقد سجل',
+                    contractContent: student.contractContent || '',
+                    contractType: student.contractType || 'text',
+                    pdfData: student.pdfData || (template ? template.pdfData : null),
+                    pdfFields: template ? template.pdfFields : null,
+                    signature: student.signature || student.signatureData || null,
+                    idImage: student.idImage || student.idCardImage || null,
+                    signedAt: student.signedAt || new Date().toISOString(),
+                    contractStatus: student.contractStatus,
+                    contractTemplateId: student.contractTemplateId || ''
+                });
+            }
+
+            // 2. Promote Grade based on current grade list order
+            const currentGrade = normalize(student.studentGrade);
+            const currentIdx = normalizedGrades.indexOf(currentGrade);
+
+            if (currentIdx !== -1 && currentIdx < normalizedGrades.length - 1) {
+                student.studentGrade = gradesOrder[currentIdx + 1];
+                promotedCount++;
+            } else if (currentIdx !== -1 && currentIdx === normalizedGrades.length - 1) {
+                // Graduate / Archive the student if they reached the last grade
+                student.isArchived = true;
+                archivedCount++;
+                // Skip reset for archived students - they are done
+                return student;
+            } else {
+                // FALLBACK: If current grade isn't in system list, we don't know where to promote.
+                // We keep them in same grade but reset for new year below.
+                console.warn(`Could not find promotion path for grade: "${student.studentGrade}"`);
+            }
+
+            // 3. Reset status for new year (CRITICAL: Clear all old contract data for active students)
+            student.contractStatus = 'pending';
+            student.contractYear = nextYearLabel || student.contractYear;
+            student.signature = null;
+            student.signatureData = null;
+            student.idImage = null;
+            student.signedAt = null;
+            student.contractNo = null;
+            student.idCardImage = null; // Legacy field
+            student.contractTitle = null; // Force refresh on next send
+            student.contractContent = null; // Force refresh on next send
+            student.pdfData = null; // Force refresh on next send
+            student.extraDocs = [];
+
+            return student;
+        });
+
+        this.saveStudents(updatedStudents);
+
+        // Final sync if cloud is ready
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            this.showNotification('⏳ جاري تحديث السحابة...');
+            CloudDB.syncLocalToCloud().then(success => {
+                if (success) console.log('✅ Cloud Migration Sync Done');
+            });
+        }
+
+        return { promotedCount, archivedCount };
     }
 }
 
@@ -424,6 +547,9 @@ const UI = {
 
         const sendMethod = document.getElementById('sendMethod');
         if (sendMethod) sendMethod.value = 'whatsapp';
+
+        if (document.getElementById('registrationType')) document.getElementById('registrationType').value = 'existing';
+        if (document.getElementById('studentNationality')) document.getElementById('studentNationality').value = 'سعودي';
 
         this.renderStudentFormFields(); // Render empty fields for new student
         this.showModal();
@@ -800,6 +926,10 @@ const UI = {
                             </button>
                             ` : ''}
 
+                            <button class="action-dropdown-item" onclick="UI.viewStudentHistory('${student.id}')">
+                                <span style="width:20px">📜</span> سجل العقود
+                            </button>
+                            
                             <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
                             
                             <button class="action-dropdown-item delete" onclick="UI.deleteStudent('${student.id}')">
@@ -895,7 +1025,7 @@ const UI = {
         };
         return badges[status] || '<span class="status-badge">غير معروف</span>';
     },
-    generateContractLink(student) {
+    async generateContractLink(student) {
         const settings = db.getSettings();
         let basePath = settings.serverAddress || window.location.href.split('?')[0].replace('index.html', '').replace(/\/$/, '');
 
@@ -915,41 +1045,88 @@ const UI = {
         let template = null;
         if (typeof contractMgr !== 'undefined') {
             template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
+            // IMPORTANT: Fetch full PDF data if it's missing from the shortcut object
+            if (template && template.hasLargePdf && !template.pdfData) {
+                try {
+                    template.pdfData = await contractMgr.getPdfFromDB(template.id);
+                } catch (e) {
+                    console.warn("Could not load PDF data for link generation:", e);
+                }
+            }
         } else {
             const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault);
+            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
         }
 
-        // Ensure contract data is in the cloud as a fallback
+        // Ensure contract data is in the cloud as a fallback - CRITICAL for parent view
         if (template && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            CloudDB.updateContract(student.id, {
+            const updateData = {
                 contractTitle: template.title,
-                contractContent: template.content,
-                contractType: template.type || 'text'
+                contractContent: template.content || '',
+                contractType: template.type || 'text',
+                contractTemplateId: template.id,
+                // These must be null to ensure we don't show old year's signature
+                contractStatus: 'pending',
+                signature: null,
+                signedAt: null
+            };
+            if (template.type === 'pdf_template' && template.pdfData) {
+                updateData.pdfData = template.pdfData;
+            }
+            // Explicitly wait for this or at least log failure
+            CloudDB.updateContract(student.id, updateData).then(success => {
+                if (!success) console.warn("⚠️ Cloud sync failed for student contract data:", student.id);
             });
         }
 
+        const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
         const dataToCompress = {
             i: student.id,
             s: student.studentName,
-            l: student.studentLevel,
-            g: student.studentGrade,
+            l: student.studentLevel || '',
+            g: student.studentGrade || '',
             p: student.parentName,
             e: student.parentEmail,
             w: student.parentWhatsapp,
             y: student.contractYear || new Date().getFullYear().toString(),
             tid: student.contractTemplateId || '',
-            // Added new fields
-            nid: student.customFields?.nationalId || student.nationalId || '',
+            // Added new fields with robust lookup
+            nid: student.nationalId || '',
             pnid: student.customFields?.parentNationalId || '',
             adr: student.address || student.customFields?.address || '',
-            nat: student.nationality || student.customFields?.nationality || ''
+            nat: student.nationality || student.studentNationality || student.customFields?.nationality || '',
+            rt: student.registrationType || 'existing',
+            tr: student.customFields?.studentTrack || student.studentTrack || ''
         };
 
-        // If it's a text contract, include content
-        if (template && template.type !== 'pdf_template') {
+        // Fallback: If critical fields are missing, search in customFields by label
+        if (student.customFields) {
+            const s = student.customFields;
+            const settings = db.getSettings();
+            (settings.customFields || []).forEach(f => {
+                const target = cleanVar(f.label);
+                // Level / Stage
+                if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة')
+                    dataToCompress.l = dataToCompress.l || s[f.id] || '';
+                // Grade
+                if (target === 'الصف' || target === 'الصفالدراسي')
+                    dataToCompress.g = dataToCompress.g || s[f.id] || '';
+                // National ID
+                if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
+                    dataToCompress.nid = dataToCompress.nid || s[f.id] || '';
+                // Parent National ID
+                if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
+                    dataToCompress.pnid = dataToCompress.pnid || s[f.id] || '';
+            });
+        }
+
+        // Always include contract title and content when available
+        if (template && template.title) {
             dataToCompress.t = template.title;
-            dataToCompress.c = template.content;
+            // Include content for text contracts (not PDF binary data)
+            if (template.type !== 'pdf_template' && template.content) {
+                dataToCompress.c = template.content;
+            }
         }
 
         const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(dataToCompress));
@@ -958,11 +1135,12 @@ const UI = {
         return { link, isLocal, isTooLong: link.length > 4000 };
     },
 
-    copyContractLink(id) {
+    async copyContractLink(id) {
         const student = db.getStudents().find(s => s.id === id);
         if (!student) return;
 
-        const { link, isLocal, isTooLong } = this.generateContractLink(student);
+        this.showNotification('⏳ جاري تجهيز الرابط...');
+        const { link, isLocal, isTooLong } = await this.generateContractLink(student);
 
         if (isLocal) {
             this.showNotification('⚠️ تنبيه: أنت تستخدم رابطاً محلياً، لن يفتح على أجهزة أخرى.');
@@ -1038,8 +1216,14 @@ const UI = {
         let template = templateId ? contractMgr.getContract(templateId) : null;
         if (!template) template = contractMgr.getDefaultContract();
 
+        // FAILSAFE: If template still null (e.g. sync hasn't finished), try getting it directly
+        if (!template && templateId) {
+            const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
+        }
+
         if (!template) {
-            this.showNotification('⚠️ عذراً، لم يتم العثور على قالب العقد لهذا الطالب');
+            this.showNotification('⚠️ عذراً، لم يتم العثور على قالب العقد. يرجى الانتظار قليلاً للمزامنة أو تحديث الصفحة.');
             return;
         }
 
@@ -1231,17 +1415,37 @@ const UI = {
         });
     },
 
-    getContractSummaryHTML(student) {
+    // Advanced Arabic Text Processor (Matching contract.js)
+    fixArabic: (text) => {
+        if (!text) return "";
+        try {
+            let str = String(text).trim();
+            const hasArabic = /[\u0600-\u06FF]/.test(str);
+            if (!hasArabic) return str;
+
+            const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
+            if (Reshaper) {
+                if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
+                else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
+            }
+            return str; // NO REVERSAL
+        } catch (e) {
+            console.error("Arabic fix error:", e);
+            return text;
+        }
+    },
+
+    getContractSummaryHTML(studentData) { // Renamed student to studentData for clarity with new mapping
         const settings = db.getSettings();
         const stampText = settings.schoolStampText || 'الإدارة';
         const schoolLogo = settings.schoolLogo || 'assets/logo.png';
         const schoolPhone = settings.schoolPhone || '---';
-        const hasSignature = !!student.signature;
-        const hasIdImage = !!student.idImage;
-        const contractNo = student.contractNo || 'CON-ADMIN';
+        const hasSignature = !!studentData.signature;
+        const hasIdImage = !!studentData.idImage;
+        const contractNo = studentData.contractNo || 'CON-ADMIN';
 
         // Fetch Template Content
-        const templateId = student.contractTemplateId;
+        const templateId = studentData.contractTemplateId;
         let template = null;
         if (typeof contractMgr !== 'undefined') {
             template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
@@ -1256,62 +1460,104 @@ const UI = {
         if (template) {
             contractTitle = template.title;
             contractContent = (typeof contractMgr !== 'undefined')
-                ? contractMgr.replaceVariables(template.content, student)
+                ? contractMgr.replaceVariables(template.content, studentData) // Use studentData here
                 : template.content;
         }
 
-        const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
+        // Unified Variable Mapping for HTML (No reversal for Browser)
+        const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+        const foundVars = contractContent.match(/{[^}]+}/g) || [];
+        foundVars.forEach(v => {
+            const target = cleanVar(v);
+            let text = "";
 
+            // Comprehensive Field Mapping
+            if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
+            else if (target === 'اسموليالامر') text = studentData.parentName || '';
+            else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
+            else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || studentData.customFields?.studentGrade || '';
+            else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
+            else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
+            else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
+                text = studentData.customFields?.nationalId || studentData.nationalId || '';
+            else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
+                text = studentData.customFields?.parentNationalId || '';
+            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
+                text = studentData.parentWhatsapp || '';
+            else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
+            else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
+            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG');
+
+            const fixed = this.fixArabic(text); // Apply fixArabic
+            if (fixed) contractContent = contractContent.replace(v, fixed);
+            else if (text === '') contractContent = contractContent.replace(v, ''); // Replace with empty if intentionally empty
+        });
+
+        const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
         const stampHtml = stampImage
             ? `<div style="text-align:center; position:relative; z-index:5;"><img src="${stampImage}" style="height:110px; width:auto; max-width:150px; opacity:0.85; transform:rotate(-2deg);"></div>`
             : `<div style="width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:0 auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
 
-        const idCardSection = hasIdImage ? `<img src="${student.idImage}" style="max-height:180px; max-width:90%; border:1px solid #ddd; padding:2px; border-radius:4px;">` : '';
+        const idCardSection = hasIdImage ? `<img src="${studentData.idImage || studentData.idCardImage}" style="max-height:180px; max-width:90%; border:1px solid #ddd; padding:2px; border-radius:4px;">` : '';
 
         return `
             <div style="direction:rtl; font-family:'Cairo', sans-serif; background:white; padding:5mm 10mm; width:100%; box-sizing:border-box; color:#1a202c;">
-                <div id="dynamicCustomFieldsContainer" class="form-row" style="flex-wrap: wrap; gap: 1rem;">
-                    <!-- Dynamic fields will be inserted here -->
-                </div>    <table style="width:100%; border-bottom:2px solid #1e3a8a; margin-bottom:40px; padding-bottom:20px;">
-                            <tr>
-                                <td style="text-align:right; width:33%;">
-                                    <p style="font-weight:bold; margin:0; font-size:16px;">${settings.schoolName || 'مدارس دانة العلوم'}</p>
-                                    <p style="font-size:12px; margin:5px 0 0;">جوال: ${schoolPhone}</p>
-                                </td>
-                                <td style="text-align:center; width:34%;"><img src="${schoolLogo}" style="height:80px; width:auto;"></td>
-                                <td style="text-align:left; width:33%;">
-                                    <p style="font-weight:bold; color:#1e3a8a; font-size:20px; margin:0;">${contractTitle}</p>
-                                    <p style="font-family:monospace; font-size:14px; margin:5px 0 0; color:#718096;">${contractNo}</p>
-                                </td>
-                            </tr>
-                        </table>
+                <table style="width:100%; border-bottom:2px solid #1e3a8a; margin-bottom:40px; padding-bottom:20px;">
+                    <tr>
+                        <td style="text-align:right; width:33%;">
+                            <p style="font-weight:bold; margin:0; font-size:16px;">${settings.schoolName || 'مدارس دانة العلوم'}</p>
+                            <p style="font-size:12px; margin:5px 0 0;">جوال: ${schoolPhone}</p>
+                        </td>
+                        <td style="text-align:center; width:34%;"><img src="${schoolLogo}" style="height:80px; width:auto;"></td>
+                        <td style="text-align:left; width:33%;">
+                            <p style="font-weight:bold; color:#1e3a8a; font-size:20px; margin:0;">${contractTitle}</p>
+                            <p style="font-family:monospace; font-size:14px; margin:5px 0 0; color:#718096;">${contractNo}</p>
+                        </td>
+                    </tr>
+                </table>
 
-                        <!-- Contract Content -->
-                        <div style="font-size:14px; line-height:1.8; margin-bottom:30px; text-align:justify; white-space:pre-wrap;">${contractContent}</div>
+                <!-- Contract Content -->
+                <div style="font-size:14px; line-height:1.8; margin-bottom:30px; text-align:justify; white-space:pre-wrap;">${contractContent}</div>
 
-                        <!-- Signatures & ID Card (Integrated) -->
-                        <div style="page-break-inside: avoid; border: 1px solid #edf2f7; border-radius: 12px; padding: 15px; background: #fff; margin-top: 20px;">
-                            <table style="width:100%;">
-                                <tr>
-                                    <td style="text-align:center; width:50%; vertical-align:bottom;">
-                                        <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">الختم والاعتماد</p>
-                                        ${stampHtml}
-                                    </td>
-                                    <td style="text-align:center; width:50%; vertical-align:bottom;">
-                                        <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">توقيع ولي الأمر</p>
-                                        ${hasSignature ? `<img src="${student.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
-                                    </td>
-                                </tr>
-                            </table>
+                <!-- Signatures & ID Card -->
+                <div style="page-break-inside: avoid; border: 1px solid #edf2f7; border-radius: 12px; padding: 15px; background: #fff; margin-top: 20px;">
+                    <table style="width:100%;">
+                        <tr>
+                            <td style="text-align:center; width:50%; vertical-align:bottom;">
+                                <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">الختم والاعتماد</p>
+                                ${stampHtml}
+                            </td>
+                            <td style="text-align:center; width:50%; vertical-align:bottom;">
+                                <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">توقيع ولي الأمر</p>
+                                ${hasSignature ? `<img src="${student.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
+                            </td>
+                        </tr>
+                    </table>
+                    ${idCardSection ? `
+                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة الهوية</p>
+                        ${idCardSection}
+                    </div>` : ''}
+                    
+                    ${(() => {
+                let html = '';
+                let docs = [...(studentData.extraDocs || [])];
+                // Fallback for old fields to ensure no data loss
+                if (studentData.birthCertImage && !docs.includes(studentData.birthCertImage)) docs.push(studentData.birthCertImage);
+                if (studentData.passportImage && !docs.includes(studentData.passportImage)) docs.push(studentData.passportImage);
 
-                            ${idCardSection ? `
-                            <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center;">
-                                <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة هوية ولي الأمر</p>
-                                ${idCardSection}
-                            </div>` : ''}
-                        </div>
-                    </div>
-                </div>`;
+                docs.forEach((doc, idx) => {
+                    html += `
+                            <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                                <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">مستند إضافي (${idx + 1})</p>
+                                <img src="${doc}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
+                            </div>`;
+                });
+                return html;
+            })()}
+                </div>
+            </div>`;
     },
 
     async previewContract(id) {
@@ -1441,23 +1687,21 @@ const UI = {
                     margin: 10,
                     filename: `عقد-${student.studentName}.pdf`,
                     image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+                    html2canvas: { scale: 2, useCORS: true, scrollY: 0, letterRendering: true },
                     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
                 };
 
                 await html2pdf().from(container).set(opt).save();
                 document.body.removeChild(container);
+                if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
             }
-
-            if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
-
         } catch (err) {
             console.error("Download Error:", err);
             alert("حدث خطأ أثناء تحميل العقد: " + err.message);
         }
     },
 
-    sendContract(id) {
+    async sendContract(id) {
         // Simple WhatsApp Link
         const students = db.getStudents();
         const student = students.find(s => String(s.id) === String(id));
@@ -1476,8 +1720,8 @@ const UI = {
             : JSON.parse(localStorage.getItem('contractTemplates') || '[]').find(c => c.id === templateId || c.isDefault);
 
         // PDF Template links now work via CloudDB sync
-
-        const { link, isLocal, isTooLong } = this.generateContractLink(student);
+        this.showNotification('⏳ جاري تحضير الرابط والمزامنة...');
+        const { link, isLocal, isTooLong } = await this.generateContractLink(student);
 
         if (isLocal) {
             alert('⚠️ تنبيه: أنت تقوم بإرسال رابط محلي (localhost). هذا الرابط لن يفتح لدى ولي الأمر إلا إذا كان في نفس شبكة الواي فاي أو كان الموقع مرفوعاً على الإنترنت.');
@@ -1542,6 +1786,15 @@ ${link}
         if (document.getElementById('contractTemplate')) {
             document.getElementById('contractTemplate').value = student.contractTemplateId || '';
         }
+        if (document.getElementById('registrationType')) {
+            document.getElementById('registrationType').value = student.registrationType || 'existing';
+        }
+        if (document.getElementById('studentNationality')) {
+            document.getElementById('studentNationality').value = student.studentNationality || 'سعودي';
+        }
+        if (document.getElementById('sendMethod')) {
+            document.getElementById('sendMethod').value = student.sendMethod || 'whatsapp';
+        }
 
         // Render Custom Fields
         this.renderStudentFormFields(student);
@@ -1588,9 +1841,23 @@ ${link}
     applyBranding() {
         const settings = db.getSettings();
         const logo = settings.schoolLogo || 'assets/logo.png';
-        if (document.getElementById('navLogo')) document.getElementById('navLogo').src = logo;
-        if (document.getElementById('settingsLogoPreview')) document.getElementById('settingsLogoPreview').src = logo;
-        if (document.getElementById('loginLogo')) document.getElementById('loginLogo').src = logo;
+        const bg = settings.loginBackground || 'assets/login-bg.jpg';
+
+        // Update Logos
+        const logoElements = ['navLogo', 'settingsLogoPreview', 'loginLogo'];
+        logoElements.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                // Only update if current setting is different to prevent flickering
+                if (el.src !== logo) el.src = logo;
+            }
+        });
+
+        // Update Login Background
+        const bgEl = document.getElementById('loginBg');
+        if (bgEl) {
+            bgEl.style.backgroundImage = `url('${bg}')`;
+        }
     },
 
     saveSettings() {
@@ -1947,7 +2214,7 @@ ${link}
         }
     },
 
-    remindParent(id) {
+    async remindParent(id) {
         const student = db.getStudents().find(s => s.id === id);
         if (!student) return;
 
@@ -1958,9 +2225,8 @@ ${link}
         }
 
         const settings = db.getSettings();
-        const baseUrl = settings.serverAddress || window.location.origin;
-        // Construct Link
-        const link = `${baseUrl}/contract.html?d=${this.generateContractLink(student)}`;
+        this.showNotification('⏳ جاري تحضير رابط التذكير...');
+        const { link } = await this.generateContractLink(student);
 
         const message = `تذكير: مرحباً ${student.parentName}،%0a%0aنرجو التكرم بتوقيع عقد الطالب *${student.studentName}* لاستكمال إجراءات التسجيل.%0a%0aرابط العقد:%0a${encodeURIComponent(link)}`;
 
@@ -2196,11 +2462,16 @@ ${link}
             const exportData = students.map(s => ({
                 'الرقم التسلسلي (ID)': s.id,
                 'اسم الطالب': s.studentName,
+                'هوية الطالب': s.nationalId || s.customFields?.nationalId || '-',
                 'المرحلة': s.studentLevel,
                 'الصف': s.studentGrade,
+                'المسار': s.studentTrack || '-',
                 'اسم ولي الأمر': s.parentName,
+                'هوية ولي الأمر': s.parentNationalId || s.customFields?.parentNationalId || '-',
                 'البريد الإلكتروني': s.parentEmail,
                 'رقم الواتساب': s.parentWhatsapp,
+                'الجنسية': s.nationality || s.customFields?.nationality || '-',
+                'نوع التسجيل': s.registrationType === 'mustajid' ? 'مستجد' : 'منتظم',
                 'حالة العقد': this.getStatusText(s.contractStatus),
                 'وقت التوقيع': s.signedAt ? new Date(s.signedAt).toLocaleString('ar-SA') : '-',
                 'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : '-',
@@ -2247,34 +2518,23 @@ ${link}
         const errorMsg = document.getElementById('loginError');
         const loginOverlay = document.getElementById('loginOverlay');
 
-        if (!usernameInput || !passwordInput) {
-            console.error('Login inputs not found');
-            return;
-        }
+        if (!usernameInput || !passwordInput) return;
 
         const inputUser = usernameInput.value.trim();
         const inputPass = passwordInput.value.trim();
 
         const settings = db.getSettings();
-        // Fallback to defaults if settings are empty/corrupt
-        const storedUser = (settings && settings.adminUsername) ? settings.adminUsername : 'admin';
-        const storedPass = (settings && settings.adminPassword) ? settings.adminPassword : 'admin';
+        const storedUser = settings?.adminUsername || 'admin';
+        const storedPass = settings?.adminPassword || 'admin';
 
-        console.log(`Login Attempt: Input=${inputUser}, Stored=${storedUser}`);
-
-        // Allow admin/admin if stored credentials match OR if we are in fallback mode
-        // Also a hardcoded 'admin'/'admin' backdoor for emergency recovery if local storage makes no sense
-        const isDefaultCreds = inputUser === 'admin' && inputPass === 'admin';
+        // Strict Matching: Security first
         const isMatch = inputUser === storedUser && inputPass === storedPass;
 
-        if (isMatch || (isDefaultCreds && !settings.adminPassword)) {
-            // Security Warning
-            if (isDefaultCreds) {
-                // Update settings if empty
-                if (!settings.adminUsername) {
-                    db.saveSettings({ ...settings, adminUsername: 'admin', adminPassword: 'admin' });
-                }
-                alert('⚠️ تنبيه: تم تسجيل الدخول باستخدام البيانات الافتراضية (admin/admin).\nيرجى تغييرها من الإعدادات لزيادة الأمان.');
+        if (isMatch) {
+            console.log('✅ Login Successful');
+
+            if (inputUser === 'admin' && inputPass === 'admin') {
+                alert('⚠️ تنبيه أمني هام:\nأنت تستخدم بيانات الدخول الافتراضية (admin/admin).\nهذا يشكل خطراً أمنياً كبيراً. يرجى التوجه فوراً لقسم الإعدادات وتغيير بيانات الدخول.');
             }
 
             sessionStorage.setItem('isLoggedIn', 'true');
@@ -2282,11 +2542,19 @@ ${link}
             this.updateStats();
             this.renderStudents();
             this.populateDynamicSelects();
+            this.applyBranding();
         } else {
-            console.warn('Login Failed');
+            console.warn('❌ Login Failed');
             if (errorMsg) {
                 errorMsg.style.display = 'block';
-                errorMsg.textContent = '❌ بيانات الدخول غير صحيحة. (جرب admin/admin)';
+                errorMsg.innerHTML = `❌ بيانات الدخول غير صحيحة.`;
+            }
+            // Shake effect for feedback
+            const card = usernameInput.closest('.card');
+            if (card) {
+                card.style.animation = 'none';
+                void card.offsetWidth;
+                card.style.animation = 'shake 0.5s';
             }
         }
     },
@@ -2336,59 +2604,99 @@ ${link}
                     return;
                 }
 
+                // 1. Validate Headers Before Processing Rows
+                const firstRow = jsonData[0];
+                const columnKeys = Object.keys(firstRow);
+                const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
+                const matchedHeaders = [];
+                const missingHeaders = [];
+
+                const requiredFields = [
+                    { label: 'اسم الطالب', search: ['اسم الطالب', 'الاسم', 'Name'] },
+                    { label: 'رقم الواتساب', search: ['رقم الواتساب', 'رقم الواتس', 'الجوال', 'رقم الجوال', 'WhatsApp', 'Phone'] },
+                    { label: 'المسار', search: ['المسار', 'مسار', 'Track'] },
+                    { label: 'المرحلة', search: ['المرحلة', 'المرحله', 'Level'] },
+                    { label: 'الصف', search: ['الصف', 'Grade'] },
+                    { label: 'هوية الطالب', search: ['هوية الطالب', 'هوية الطالب', 'الهوية', 'National ID', 'Id'] },
+                    { label: 'هوية ولي الأمر', search: ['هوية ولي الأمر', 'هوية ولي الامر', 'Parent ID', 'ParentID'] }
+                ];
+
+                requiredFields.forEach(field => {
+                    const normalizedPossible = field.search.map(normalize);
+                    const foundKey = columnKeys.find(rk => normalizedPossible.includes(normalize(rk)));
+                    if (foundKey) matchedHeaders.push(field.label);
+                    else missingHeaders.push(field.label);
+                });
+
+                if (missingHeaders.length > 0) {
+                    const errorMsg = `❌ الملف لا يحتوي على الأعمدة المطلوبة أو المسميات غير معروفة:\n\n` +
+                        missingHeaders.map(h => `- ${h}`).join('\n') +
+                        `\n\nيرجى تعديل مسميات الأعمدة في ملف الإكسل والمحاولة مرة أخرى.`;
+                    alert(errorMsg);
+                    input.value = '';
+                    return;
+                }
+
                 const settings = db.getSettings();
                 const nationalContractId = settings.nationalContractId;
                 const diplomaContractId = settings.diplomaContractId;
-                let errors = [];
                 let importedCount = 0;
 
                 jsonData.forEach((row, index) => {
-                    // Auto-assign contract based on track
-                    const track = (row['المسار'] || row['Track'] || '').trim().toLowerCase();
+                    // Robust Helper: Match headers ignoring spaces, case, and Arabic Hamzas
+                    const getVal = (possibleHeaders) => {
+                        const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
+                        const normalizedPossible = possibleHeaders.map(normalize);
+
+                        // Find first matching key in row
+                        const actualKey = Object.keys(row).find(rk => normalizedPossible.includes(normalize(rk)));
+                        return actualKey !== undefined ? String(row[actualKey]).trim() : '';
+                    };
+
+                    const trackValue = getVal(['المسار', 'مسار', 'النباهة', 'Track']);
+                    const trackLower = trackValue.toLowerCase();
                     let assignedContractId = null;
 
-                    if (track.includes('دبلوم') || track.includes('diploma')) {
-                        if (!diplomaContractId) {
-                            errors.push(`- الصف ${index + 2}: تم تحديد مسار "الدبلومة" ولكن لم يتم ربط عقد له في الإعدادات.`);
-                        } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(diplomaContractId)) {
-                            errors.push(`- الصف ${index + 2}: عقد الدبلومة المحدد في الإعدادات (ID: ${diplomaContractId}) غير موجود في النظام.`);
-                        }
+                    if (trackLower.includes('دبلوم') || trackLower.includes('diploma')) {
                         assignedContractId = diplomaContractId;
-                    } else if (track.includes('أهلي') || track.includes('ثنائي') || track.includes('national') || track.includes('bilingual')) {
-                        if (!nationalContractId) {
-                            errors.push(`- الصف ${index + 2}: تم تحديد مسار "الأهلي" ولكن لم يتم ربط عقد له في الإعدادات.`);
-                        } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(nationalContractId)) {
-                            errors.push(`- الصف ${index + 2}: عقد الأهلي المحدد في الإعدادات (ID: ${nationalContractId}) غير موجود في النظام.`);
-                        }
+                    } else if (trackLower.includes('أهلي') || trackLower.includes('اهلي') || trackLower.includes('ثنائي') || trackLower.includes('national') || trackLower.includes('bilingual')) {
                         assignedContractId = nationalContractId;
                     }
 
-                    if (track && !assignedContractId) {
-                        errors.push(`- الصف ${index + 2}: المسار "${row['المسار']}" غير معروف أو لم يتم تعيين عقد له في الإعدادات.`);
-                    }
-
-                    // Collect all custom fields from Excel
+                    // Collect custom fields
                     const customFields = {};
                     (settings.customFields || []).forEach(fieldDef => {
-                        const excelHeader = fieldDef.label;
-                        if (row[excelHeader]) {
-                            customFields[fieldDef.id] = row[excelHeader];
-                        }
+                        const val = getVal([fieldDef.label]);
+                        if (val) customFields[fieldDef.id] = val;
                     });
-                    customFields.studentTrack = row['المسار'] || row['Track'] || '';
 
                     const student = {
-                        studentName: row['اسم الطالب'] || row['Name'] || '',
-                        parentName: row['اسم ولي الأمر'] || row['ولي الأمر'] || row['Parent'] || '',
-                        parentEmail: row['البريد الإلكتروني'] || row['البريد'] || row['Email'] || '',
-                        parentWhatsapp: String(row['رقم الواتساب'] || row['الجوال'] || row['WhatsApp'] || ''),
-                        studentLevel: row['المرحلة'] || row['Level'] || '',
-                        studentGrade: row['الصف'] || row['Grade'] || '',
-                        contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
-                        sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
+                        studentId: Date.now().toString() + index, // Temp ID
+                        studentName: getVal(['اسم الطالب', 'الاسم', 'Name']),
+                        parentName: getVal(['اسم ولي الأمر', 'اسم ولي الامر', 'ولي الأمر', 'ولي الامر', 'Parent Name', 'Parent']),
+                        parentEmail: getVal(['البريد الإلكتروني', 'البريد الالكتروني', 'الإيميل', 'الايميل', 'Email']),
+                        parentWhatsapp: getVal(['رقم الواتساب', 'رقم الواتس', 'الجوال', 'رقم الجوال', 'WhatsApp', 'Phone']),
+                        studentLevel: getVal(['المرحلة', 'المرحله', 'Level']),
+                        studentGrade: getVal(['الصف', 'الصف الدراسي', 'Grade']),
+                        studentTrack: trackValue,
+                        nationalId: getVal(['هوية الطالب', 'هوية الطالب', 'الهوية', 'سجل المدني', 'الرقم القومي', 'National ID', 'Id']),
+                        parentNationalId: getVal(['هوية ولي الأمر', 'هوية ولي الامر', 'سجل ولي الأمر', 'Parent ID', 'ParentID']),
+                        contractYear: getVal(['السنة الدراسية', 'السنه الدراسيه', 'السنة', 'Year']) || new Date().getFullYear().toString(),
+                        sendMethod: getVal(['طريقة الإرسال', 'طريقة الارسال', 'SendMethod']) || 'whatsapp',
+                        registrationType: (getVal(['نوع التسجيل']).includes('قديم') || getVal(['نوع التسجيل']).includes('منتظم')) ? 'existing' : 'mustajid',
+                        nationality: getVal(['الجنسية', 'Nationality']) || 'سعودي',
+                        contractStatus: 'pending',
                         contractTemplateId: assignedContractId,
                         customFields: customFields
                     };
+
+                    // Ensure key fields are in customFields for display
+                    student.customFields.studentTrack = student.studentTrack;
+                    student.customFields.nationalId = student.nationalId;
+                    student.customFields.parentNationalId = student.parentNationalId;
+                    student.customFields.registrationType = student.registrationType;
+                    student.customFields.studentGrade = student.studentGrade;
+                    student.customFields.studentLevel = student.studentLevel;
 
                     if (student.studentName) {
                         db.saveStudent(student);
@@ -2396,11 +2704,7 @@ ${link}
                     }
                 });
 
-                if (errors.length > 0 && importedCount > 0) {
-                    alert(`تم استيراد ${importedCount} طالب مع وجود الملاحظات التالية:\n\n${errors.join('\n')}\n\nسيتم استخدام العقد الافتراضي لهذه الحالات.`);
-                } else {
-                    this.showNotification(`✅ تم استيراد ${importedCount} طالب بنجاح`);
-                }
+                this.showNotification(`✅ تم استيراد ${importedCount} طالب بنجاح`);
                 this.renderStudents();
                 this.updateStats();
                 this.closeImportModal();
@@ -2464,7 +2768,7 @@ ${link}
 
     exportSystemJSON() {
         console.log('💾 Starting System Snapshot...');
-        const students = db.getStudents();
+        const students = db.getStudents(true); // Include archived students in full backup
         const settings = db.getSettings();
 
         const backup = {
@@ -2575,12 +2879,16 @@ ${link}
             const settings = db.getSettings();
             const rowData = {
                 'اسم الطالب': 'محمد أحمد علي',
-                'المسار': 'مسار ثنائي اللغة', // عمود المسار أصبح أساسياً
+                'هوية الطالب': '1234567890',
+                'المسار': 'مسار ثنائي اللغة',
                 'المرحلة': 'الابتدائية',
                 'الصف': 'الصف الأول',
                 'اسم ولي الأمر': 'أحمد علي',
+                'هوية ولي الأمر': '1020304050',
                 'البريد الإلكتروني': 'parent@example.com',
                 'رقم الواتساب': '966500000000',
+                'الجنسية': 'سعودي',
+                'نوع التسجيل': 'مستجد', // أو 'منتظم'
                 'طريقة الإرسال': 'whatsapp',
                 'السنة الدراسية': '2024-2025'
             };
@@ -2602,7 +2910,7 @@ ${link}
 
             worksheet['!dir'] = 'rtl';
             const standardCols = [
-                { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+                { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
             ];
             worksheet['!cols'] = [...standardCols, ...customHeaders];
 
@@ -2628,6 +2936,293 @@ ${link}
         } catch (error) {
             console.error('Download Error:', error);
             this.showNotification('❌ فشل تحميل الملف، حاول مرة أخرى');
+        }
+    },
+
+    switchSettingsTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+        const targetTab = document.getElementById(`tab-${tabId}`);
+        if (targetTab) targetTab.classList.add('active');
+
+        // Find button by its onclick which contains tabId
+        const targetBtn = document.querySelector(`.tab-btn[onclick*="'${tabId}'"]`);
+        if (targetBtn) targetBtn.classList.add('active');
+
+        if (tabId === 'migration') {
+            this.refreshArchiveTable();
+        }
+    },
+
+    async startMigration() {
+        const nextYear = document.getElementById('nextYearLabel').value.trim();
+        if (!nextYear) {
+            alert('يرجى إدخال مسمى السنة الدراسية القادمة أولاً.');
+            return;
+        }
+
+        const stats = db.getStats();
+        if (!confirm(`هل أنت متأكد من بدء ترحيل جميع الطلاب للسنة (${nextYear})؟\n\nتنبيه: سيتم أرشفة العقود الحالية لعدد (${stats.signed}) طالب موقع.\nستتم تصفير التواقيع وبدء سنة جديدة.`)) {
+            return;
+        }
+
+        try {
+            this.showNotification('⏳ جاري تنفيذ عملية الترحيل...');
+            const result = db.migrateStudents(nextYear);
+
+            this.showNotification(`✅ اكتمل الترحيل: تم ترفيع ${result.promotedCount} طلاب وأرشفة ${result.archivedCount} طلاب متخرجين.`);
+            this.renderStudents();
+            this.updateStats();
+            this.refreshArchiveTable();
+        } catch (error) {
+            console.error('Migration Error:', error);
+            alert('حدث خطأ أثناء الترحيل: ' + error.message);
+        }
+    },
+
+    archiveStudent(id) {
+        if (!confirm('هل أنت متأكد من نقل هذا الطالب للأرشيف؟ لن يظهر في القوائم النشطة.')) return;
+        const students = db.getStudents(true);
+        const student = students.find(s => String(s.id) === String(id));
+        if (student) {
+            student.isArchived = true;
+            db.saveStudent(student); // This handles both local and cloud sync
+            this.renderStudents();
+            this.updateStats();
+            this.showNotification('✅ تم نقل الطالب للأرشيف بنجاح');
+        }
+    },
+
+    unarchiveStudent(id) {
+        if (!confirm('هل تريد إعادة هذا الطالب للقائمة النشطة؟')) return;
+        const students = db.getStudents(true);
+        const student = students.find(s => String(s.id) === String(id));
+        if (student) {
+            student.isArchived = false;
+            db.saveStudent(student); // This handles both local and cloud sync
+            this.renderStudents();
+            this.refreshArchiveTable();
+            this.updateStats();
+            this.showNotification('✅ تم استعادة الطالب للقائمة النشطة');
+        }
+    },
+
+    bulkArchiveStudents() {
+        const checks = document.querySelectorAll('.student-checkbox:checked');
+        const ids = Array.from(checks).map(cb => cb.value);
+        if (ids.length === 0) {
+            this.showNotification('⚠️ يرجى اختيار طلاب أولاً');
+            return;
+        }
+
+        if (confirm(`هل أنت متأكد من نقل عدد (${ids.length}) طلاب للأرشيف؟`)) {
+            const students = db.getStudents(true);
+            ids.forEach(id => {
+                const student = students.find(s => String(s.id) === String(id));
+                if (student) student.isArchived = true;
+            });
+            db.saveStudents(students);
+            this.renderStudents();
+            this.updateStats();
+            this.refreshArchiveTable();
+
+            // Sync all to Cloud if ready
+            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                CloudDB.syncLocalToCloud();
+            }
+
+            this.showNotification(`✅ تم أرشفة ${ids.length} طلاب بنجاح`);
+
+            // Uncheck header
+            const headerCheck = document.getElementById('selectAllAllStudents');
+            if (headerCheck) headerCheck.checked = false;
+        }
+    },
+
+    refreshArchiveTable() {
+        const tbody = document.getElementById('archiveTableBody');
+        if (!tbody) return;
+
+        const archived = db.getStudents(true).filter(s => s.isArchived);
+        tbody.innerHTML = '';
+
+        if (archived.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 2rem; color: var(--text-muted);">لا يوجد طلاب في الأرشيف حالياً</td></tr>';
+            return;
+        }
+
+        archived.forEach(student => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><div style="font-weight: bold;">${student.studentName}</div></td>
+                <td>${student.studentTrack || '-'}</td>
+                <td>${student.studentGrade || '-'}</td>
+                <td>
+                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                        <button class="btn btn-secondary btn-sm" onclick="UI.viewStudentHistory('${student.id}')" title="عرض العقود السابقة">📜 السجل</button>
+                        <button class="btn btn-primary btn-sm" onclick="UI.unarchiveStudent('${student.id}')" style="background:#10b981">🔄 استعادة</button>
+                        <button class="btn btn-icon" onclick="UI.deleteStudent('${student.id}'); UI.refreshArchiveTable();" style="color: #ef4444;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    },
+
+    viewStudentHistory(studentId) {
+        console.log('📜 Viewing history for student:', studentId);
+        const student = db.getStudents(true).find(s => String(s.id) === String(studentId));
+        if (!student) return;
+
+        if (!student.contractHistory || student.contractHistory.length === 0) {
+            alert('لا يوجد سجل عقود سابقة محفوظ لهذا الطالب حالياً.');
+            return;
+        }
+
+        let historyHtml = `
+            <div style="direction: rtl; text-align: right; font-family: 'Cairo', sans-serif;">
+                <h2 style="margin-bottom:1.5rem; border-bottom: 2px solid var(--primary-main); padding-bottom:0.5rem; color: var(--primary-main);">سجل العقود والأرشفة: ${student.studentName}</h2>
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        `;
+
+        student.contractHistory.forEach((h, idx) => {
+            historyHtml += `
+                <div style="border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; background: #fff; box-shadow: var(--shadow-sm);">
+                    <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom:1rem; border-bottom: 1px dashed var(--border-color); padding-bottom:0.5rem;">
+                        <span style="font-weight:800; font-size: 1.1rem; color:var(--text-primary);">السنة الدراسية: ${h.contractYear}</span>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <button class="btn btn-secondary btn-sm" onclick="UI.downloadPastContract('${student.id}', ${idx})" style="background:#4f46e5; color:white; border:none;">📥 تحميل PDF</button>
+                            <span style="background: var(--primary-light); color: var(--primary-main); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">موثق في: ${new Date(h.signedAt).toLocaleDateString('ar-SA')}</span>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size:0.95rem;">
+                        <div><strong style="color:var(--text-muted)">العقد:</strong> ${h.contractTitle || '-'}</div>
+                        <div><strong style="color:var(--text-muted)">الصف:</strong> ${h.studentGrade}</div>
+                        <div style="grid-column: 1/-1; margin-top:1rem;">
+                            <strong style="display:block; margin-bottom:0.5rem; color:var(--text-muted);">التوقيع المحفوظ:</strong>
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: inline-block;">
+                                ${h.signature ? `<img src="${h.signature}" style="max-height:80px; display:block;">` : '<span style="color:#ef4444">بدون توقيع</span>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        historyHtml += `</div></div>`;
+
+        // Use the preview modal to show history
+        const previewModal = document.getElementById('contractPreviewModal');
+        const previewBody = document.getElementById('contractPreviewBody');
+        if (previewModal && previewBody) {
+            previewBody.innerHTML = historyHtml;
+            previewModal.classList.add('active');
+            previewModal.style.display = 'flex';
+        }
+    },
+
+    testMigrateStudent(id) {
+        if (!confirm('سيتم اعتبار هذا الطالب منتقلاً لسنة دراسية جديدة. سيتم حفظ عقده الحالي في "السجل" وتصفير حالته للبدء من جديد. هل أنت متأكد؟')) return;
+
+        const students = db.getStudents(true);
+        const index = students.findIndex(s => String(s.id) === String(id));
+        if (index === -1) return;
+
+        const student = students[index];
+        const currentYear = student.contractYear || 'سنة حالية';
+
+        // 1. Snapshot the current contract into history
+        if (!student.contractHistory) student.contractHistory = [];
+        const template = student.contractTemplateId ? contractMgr.getContract(student.contractTemplateId) : null;
+
+        student.contractHistory.push({
+            contractYear: currentYear,
+            studentGrade: student.studentGrade || '',
+            studentLevel: student.studentLevel || '',
+            contractTitle: student.contractTitle || 'عقد تجريبي',
+            contractContent: student.contractContent || '',
+            contractType: student.contractType || 'text',
+            pdfData: student.pdfData || (template ? template.pdfData : null),
+            pdfFields: template ? template.pdfFields : null,
+            signature: student.signature || student.signatureData || null,
+            idImage: student.idImage || student.idCardImage || null,
+            signedAt: student.signedAt || new Date().toISOString(),
+            contractStatus: student.contractStatus,
+            contractTemplateId: student.contractTemplateId || ''
+        });
+
+        // 2. Prepare for "Next Year"
+        student.contractStatus = 'pending';
+        student.signature = null;
+        student.signatureData = null;
+        student.idImage = null;
+        student.signedAt = null;
+        student.contractYear = '1447هـ (تجريبي)';
+
+        db.saveStudents(students);
+        this.renderStudents();
+        this.updateStats();
+        this.showNotification('✅ تم الترحيل التجريبي! اضغط الآن على "سجل العقود" لرؤية النتيجة.');
+    },
+
+    async downloadPastContract(studentId, historyIndex) {
+        const student = db.getStudents(true).find(s => String(s.id) === String(studentId));
+        if (!student || !student.contractHistory || !student.contractHistory[historyIndex]) return;
+
+        const hist = student.contractHistory[historyIndex];
+        this.showNotification('⏳ جاري تجهيز العقد القديم...');
+
+        // Build a temporary student object for the PDF generator
+        const tempStudent = {
+            ...student,
+            contractTitle: hist.contractTitle,
+            contractContent: hist.contractContent,
+            contractType: hist.contractType,
+            pdfData: hist.pdfData,
+            signature: hist.signature,
+            signedAt: hist.signedAt,
+            contractStatus: hist.contractStatus,
+            studentGrade: hist.studentGrade,
+            contractYear: hist.contractYear
+        };
+
+        if (hist.contractType === 'pdf_template' || (hist.contractType === 'pdf' && hist.pdfData)) {
+            // Regeneration for PDF Template History
+            try {
+                if (typeof contractMgr === 'undefined') throw new Error('Contract Manager not found');
+
+                // Construct a mock template object from history
+                const mockTemplate = {
+                    id: hist.contractTemplateId || 'history',
+                    title: hist.contractTitle,
+                    content: hist.contractContent,
+                    type: 'pdf_template',
+                    pdfData: hist.pdfData,
+                    pdfFields: hist.pdfFields || []
+                };
+
+                const pdfBytes = await contractMgr.generatePdfFromTemplate(mockTemplate, tempStudent);
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `عقد_${tempStudent.studentName}_${hist.contractYear}.pdf`;
+                link.click();
+            } catch (err) {
+                console.error('PDF History Download Error:', err);
+                alert('فشل في توليد ملف PDF التاريخي: ' + err.message);
+            }
+        } else {
+            // Text-based contract
+            const oldStudent = window.currentStudent;
+            window.currentStudent = tempStudent;
+            try {
+                this.downloadContractPdf(studentId);
+            } finally {
+                window.currentStudent = oldStudent;
+            }
         }
     }
 };
@@ -2789,6 +3384,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 contractYear: document.getElementById('contractYear')?.value || new Date().getFullYear().toString(),
                 contractTemplateId: document.getElementById('contractTemplate')?.value || '',
                 sendMethod: document.getElementById('sendMethod')?.value || 'whatsapp',
+                registrationType: document.getElementById('registrationType')?.value || 'existing',
+                studentNationality: document.getElementById('studentNationality')?.value || 'سعودي',
 
                 // Add the collected custom fields object
                 customFields: customFields,

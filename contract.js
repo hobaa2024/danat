@@ -2,13 +2,16 @@
 const SCHOOL_WHATSAPP = '966590000000';
 const SCHOOL_STAMP_IMG = 'assets/stamp.png';
 const SCHOOL_LOGO = 'assets/logo.png';
-// -----------------------
-const urlParams = new URLSearchParams(window.location.search);
-const compressedData = urlParams.get('c');
-const studentIdFromUrl = urlParams.get('id');
+
+// Ensure we have a robust way to get URL params
+const getParam = (p) => new URLSearchParams(window.location.search).get(p);
+const compressedData = getParam('c');
+const studentIdFromUrl = getParam('id');
+const finalId = studentIdFromUrl || (compressedData ? 'temp' : null);
 
 // Global State
 let uploadedFile = null;
+let extraDocs = []; // Array to store multiple extra documents
 let signatureData = null;
 let hasDrawn = false;
 let studentIdToSave = null;
@@ -21,12 +24,35 @@ let lastY = 0;
 // Global cache for fonts to speed up generation
 let cachedCairoFont = null;
 
-// Pre-fetch font immediately
-// Pre-fetch font immediately with hyper-resilience (using Amiri - more reliable)
-(async function prefetchFont() {
-    if (cachedCairoFont && cachedCairoFont.byteLength > 100000) return;
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) return resolve();
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = (e) => reject(new Error(`Failed to load script: ${src}`));
+        document.head.appendChild(script);
+    });
+}
 
-    // STRATEGY A: Try CloudDB (Firebase) first - Most reliable for parents
+// Pre-fetch font immediately
+// Pre-fetch font immediately with hyper-resilience
+(async function prefetchFont() {
+    if (cachedCairoFont && cachedCairoFont.byteLength > 50000) return;
+
+    // STRATEGY 0: Use Embedded Font (Immediate & Offline)
+    if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
+        try {
+            console.log("💎 Pre-fetching embedded Cairo font...");
+            const binary = atob(GLOBAL_CAIRO_FONT);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            cachedCairoFont = bytes;
+            return;
+        } catch (e) { console.warn("Embedded pre-fetch failed:", e); }
+    }
+
+    // STRATEGY A: Try CloudDB (Firebase)
     if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
         try {
             const cloudBase64 = await CloudDB.getFont('Amiri-Regular');
@@ -43,12 +69,11 @@ let cachedCairoFont = null;
         } catch (e) { }
     }
 
-    // STRATEGY B: Try Local and External sources (using Amiri font - more reliable)
+    // STRATEGY B: Try Local and External sources (using Cairo font - matches the file in folder)
     const sources = [
-        'Amiri-Regular.ttf',
-        'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf',
-        'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf',
-        'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff'
+        'alfont_com_Cairo-Regular.ttf',
+        'https://cdn.jsdelivr.net/gh/googlefonts/cairo@master/fonts/ttf/Cairo-Regular.ttf',
+        'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf'
     ];
     for (const url of sources) {
         try {
@@ -81,15 +106,6 @@ let cachedCairoFont = null;
 })();
 
 // Dependency Check
-function loadScript(src) {
-    return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-    });
-}
 
 (async function checkDependencies() {
     if (typeof LZString === 'undefined') {
@@ -197,35 +213,58 @@ async function loadStudentData() {
             if (!json) json = decodeURIComponent(compressedData);
             if (json) {
                 const data = JSON.parse(json);
+                console.log('📦 Decompressed URL data keys:', Object.keys(data));
                 student = {
-                    id: data.i, studentName: data.s, studentLevel: data.l, studentGrade: data.g,
-                    parentName: data.p, parentEmail: data.e, parentWhatsapp: data.w, contractYear: data.y,
+                    id: data.i,
+                    studentName: data.s || '',
+                    studentLevel: data.l || '',
+                    studentGrade: data.g || '',
+                    parentName: data.p || '',
+                    parentEmail: data.e || '',
+                    parentWhatsapp: data.w || '',
+                    contractYear: data.y || '',
                     contractTemplateId: data.tid || '',
-                    contractStatus: 'pending', // Default to pending for URL loaded students
+                    contractStatus: 'pending',
                     nationalId: data.nid || '',
                     parentNationalId: data.pnid || '',
                     address: data.adr || '',
                     nationality: data.nat || '',
+                    registrationType: data.rt || 'existing',
+                    studentTrack: data.tr || '',
                     customFields: {
                         nationalId: data.nid || '',
                         parentNationalId: data.pnid || '',
                         address: data.adr || '',
-                        nationality: data.nat || ''
+                        nationality: data.nat || '',
+                        studentLevel: data.l || '',
+                        studentGrade: data.g || '',
+                        studentTrack: data.tr || '',
+                        registrationType: data.rt || 'existing'
                     }
                 };
                 studentIdToSave = data.i;
-                if (data.t && data.c) contract = { title: data.t, content: data.c };
+
+                // Save contract title on student for later use
+                if (data.t) student.contractTitle = data.t;
+
+                if (data.t && data.c) {
+                    contract = { title: data.t, content: data.c };
+                    console.log('✅ Contract loaded from URL data, title:', data.t, ', content length:', data.c.length);
+                } else {
+                    console.log('⚠️ URL data missing contract content. title:', data.t || 'NONE', ', content:', data.c ? 'exists' : 'MISSING');
+                }
             }
-        } catch (e) { }
+        } catch (e) { console.error('❌ Error parsing URL data:', e); }
     }
 
-    const finalId = studentIdFromUrl || (student ? student.id : null);
+    // Determine Final ID early for Firebase check
+    let finalId = studentIdFromUrl;
+    if (!finalId && student && student.id) finalId = student.id;
 
     // CRITICAL: Always check Firebase FIRST to see if contract was already signed
-    // This prevents re-signing even if someone shares the original link
-    let firebaseStudent = null;
     if (finalId && finalId !== 'null' && finalId !== 'undefined' && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-        firebaseStudent = await CloudDB.getStudent(String(finalId));
+        console.log('☁️ Fetching student record for ID:', finalId);
+        const firebaseStudent = await CloudDB.getStudent(String(finalId));
 
         if (firebaseStudent) {
             // Check if already signed in Firebase (THE AUTHORITATIVE SOURCE)
@@ -238,18 +277,36 @@ async function loadStudentData() {
                 student = { ...student, ...firebaseStudent };
                 currentStudent = student;
                 studentIdToSave = firebaseStudent.id;
-                showAlreadySignedSimplified(student);
+
+                // Ensure text is loaded before showing success
+                if (!contract) {
+                    if (student.contractTitle && student.contractContent) {
+                        contract = {
+                            title: student.contractTitle,
+                            content: student.contractContent,
+                            type: student.contractType || 'text',
+                            pdfData: student.pdfData || null
+                        };
+                    } else {
+                        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                        contract = templates.find(c => c.id === student.contractTemplateId) || templates.find(c => c.isDefault) || templates[0];
+                    }
+                }
+
+                if (contract) renderContractText(contract, student);
+
+                showAlreadySignedSimplified(student, false); // False = already signed before
                 return student;
             }
 
-            // If not signed, merge non-critical data but keep URL contract content
+            // If not signed, merge data
             if (student) {
                 student = {
                     ...student,
-                    // Keep critical data from Firebase
+                    ...firebaseStudent,
+                    customFields: { ...(student.customFields || {}), ...(firebaseStudent.customFields || {}) },
                     contractStatus: firebaseStudent.contractStatus || student.contractStatus,
                     contractNo: firebaseStudent.contractNo || student.contractNo,
-                    customFields: { ...(student.customFields || {}), ...(firebaseStudent.customFields || {}) },
                     idImage: firebaseStudent.idImage || student.idImage,
                     signature: firebaseStudent.signature || student.signature
                 };
@@ -257,6 +314,17 @@ async function loadStudentData() {
                 student = firebaseStudent;
             }
             studentIdToSave = finalId;
+
+            // If we still don't have contract content, try to get it from Firebase student record
+            if (!contract && firebaseStudent.contractTitle && firebaseStudent.contractContent) {
+                contract = {
+                    title: firebaseStudent.contractTitle,
+                    content: firebaseStudent.contractContent,
+                    type: firebaseStudent.contractType || 'text',
+                    pdfData: firebaseStudent.pdfData || null
+                };
+                console.log('📄 Contract loaded from Firebase student record:', contract.title);
+            }
         }
     }
 
@@ -267,218 +335,61 @@ async function loadStudentData() {
         document.getElementById('contractYear').textContent = student.contractYear;
         document.getElementById('contractParentName').textContent = student.parentName;
 
-        // Populate Contract Text BEFORE checking status (Critical for PDF generation)
+        const docsStep = document.getElementById('docsStep');
+        if (docsStep) docsStep.style.display = 'block';
+
+        if (student.registrationType === 'mustajid') {
+            const extraDocsSection = document.getElementById('extraDocsSection');
+            if (extraDocsSection) extraDocsSection.style.display = 'block';
+        }
+
         if (!contract) {
             if (student.contractTitle && student.contractContent) {
                 contract = {
                     title: student.contractTitle,
                     content: student.contractContent,
-                    type: student.contractType || 'text'
+                    type: student.contractType || 'text',
+                    pdfData: student.pdfData || null
                 };
             } else {
-                // Try Local Storage First
                 const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                // FIX: Prioritize exact ID match, then default
-                contract = templates.find(c => c.id === student.contractTemplateId);
-                if (!contract) contract = templates.find(c => c.isDefault);
+                contract = templates.find(c => c.id === student.contractTemplateId) || templates.find(c => c.isDefault) || templates[0];
 
-                // If not found locally, try Cloud (Essential for Parents)
-                if (!contract && student.contractTemplateId && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                // Try CloudDB if still no contract (parent won't have local templates)
+                if (!contract && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
                     try {
-                        console.log('☁️ Fetching contract template from cloud:', student.contractTemplateId);
-                        contract = await CloudDB.getContractTemplate(student.contractTemplateId);
-
-                        // Update cache with the latest version from cloud
-                        if (contract) {
-                            const localTemplates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                            const idx = localTemplates.findIndex(t => t.id === contract.id);
-                            if (idx !== -1) {
-                                localTemplates[idx] = contract;
-                            } else {
-                                localTemplates.push(contract);
-                            }
-                            localStorage.setItem('contractTemplates', JSON.stringify(localTemplates));
+                        // Try getting template by ID first
+                        if (student.contractTemplateId) {
+                            contract = await CloudDB.getContractTemplate(student.contractTemplateId);
                         }
-                    } catch (err) {
-                        console.error("Cloud Fetch Error:", err);
-                    }
-                }
-
-                // Fallback to default local if still null
-                if (!contract) {
-                    contract = templates.find(c => c.isDefault) || templates[0];
-                    if (contract) console.log('🏠 Using local fallback template:', contract.title);
+                        // If still nothing, try getting contract data from student record
+                        if (!contract && finalId) {
+                            const cloudStudent = await CloudDB.getStudent(String(finalId));
+                            if (cloudStudent && cloudStudent.contractTitle && cloudStudent.contractContent) {
+                                contract = {
+                                    title: cloudStudent.contractTitle,
+                                    content: cloudStudent.contractContent,
+                                    type: cloudStudent.contractType || 'text',
+                                    pdfData: cloudStudent.pdfData || null
+                                };
+                            }
+                        }
+                    } catch (err) { console.warn('CloudDB contract fetch failed:', err); }
                 }
             }
         }
 
-        // Final sanity check for template
-        if (!contract && typeof CloudDB !== 'undefined' && CloudDB.isReady() && student.contractTemplateId) {
-            console.log('🔄 Retrying template fetch...');
-            contract = await CloudDB.getContractTemplate(student.contractTemplateId);
-        }
         if (contract) {
-            const contractTextDiv = document.querySelector('.contract-text');
-            if (contractTextDiv) {
-                // Determine if it's a PDF Template
-                const isPdf = (contract.type === 'pdf_template') ||
-                    (contract.content && contract.content.startsWith('قالب PDF:'));
-
-                if (isPdf && !contract.pdfData) {
-                    console.warn("⚠️ PDF template detected but pdfData is missing. Attempting deep fetch...");
-                    if (typeof CloudDB !== 'undefined' && CloudDB.isReady() && contract.id) {
-                        const full = await CloudDB.getContractTemplate(contract.id);
-                        if (full && full.pdfData) contract = full;
-                    }
-                }
-
-                if (isPdf && contract.pdfData) {
-                    // PDF Template Mode
-                    contractTextDiv.innerHTML = `
-                        <div style="text-align:center; padding: 20px;">
-                            <h3 style="color: var(--primary-color);">${contract.title}</h3>
-                            <p style="margin-bottom: 20px; font-size: 0.9rem; color: var(--text-muted);">هذا العقد محفوظ بتنسيقه الرسمي (PDF). يتم الآن تجهيز نسختك الخاصة ببياناتك:</p>
-                            <div id="pdf-loading-state" style="padding: 40px; background: #f1f5f9; border-radius: 12px; margin-bottom: 20px;">
-                                <div class="loading"></div>
-                                <p style="margin-top: 15px; color: #4a5568; font-weight: bold;">جاري تحضير العقد ببياناتك... يرجى الانتظار</p>
-                            </div>
-                            <div id="pdf-preview-container" style="display:none; border: 2px solid var(--border-color); border-radius: 12px; background: #525659; overflow: auto; max-height: 500px; padding: 10px;">
-                                <canvas id="pdf-preview-canvas" style="max-width: 100%; height: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.2);"></canvas>
-                            </div>
-                            <div id="pdf-controls" style="display:none;">
-                                <div id="pdf-page-info" style="margin-top: 10px; font-size: 0.8rem; font-weight: bold;"></div>
-                                <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="renderPdfPage(currentPdfPage - 1)" id="prevPdfBtn">الصفحة السابقة</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="renderPdfPage(currentPdfPage + 1)" id="nextPdfBtn">الصفحة التالية</button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    // Store contract for later
-                    currentStudent.contract = contract;
-                    currentStudent.contractType = 'pdf_template';
-
-                    // Start Loading PDF (Personalized with student data)
-                    setTimeout(async () => {
-                        try {
-                            console.log("Generating personalized PDF preview...");
-                            const pdfBytes = await generatePdfFromTemplate(contract, student);
-                            if (pdfBytes) {
-                                // Direct Embed Fix
-                                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                                const url = window.URL.createObjectURL(blob);
-
-                                const loadingState = document.getElementById('pdf-loading-state');
-                                if (loadingState) loadingState.style.display = 'none';
-
-                                const previewContainer = document.getElementById('pdf-preview-container');
-                                if (previewContainer) {
-                                    previewContainer.style.display = 'block';
-                                    previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:600px; border:none;" title="Contract Preview"></iframe>`;
-
-                                    // Add Download Button for Backup
-                                    const dlBtn = document.createElement('a');
-                                    dlBtn.href = url;
-                                    dlBtn.download = `contract_${student.studentName || 'signed'}.pdf`;
-                                    dlBtn.className = 'btn btn-primary';
-                                    dlBtn.style.display = 'block';
-                                    dlBtn.style.textAlign = 'center';
-                                    dlBtn.style.marginTop = '15px';
-                                    dlBtn.innerHTML = '📥 تحميل نسخة PDF الآن';
-                                    previewContainer.parentNode.insertBefore(dlBtn, previewContainer.nextSibling);
-                                }
-                            } else {
-                                throw new Error("Generated PDF is empty");
-                            }
-                        } catch (err) {
-                            console.error("PDF Preview Generation Error:", err);
-                            // Hide loading and show error message
-                            const loadingEl = document.getElementById('pdf-loading-state');
-                            if (loadingEl) {
-                                loadingEl.innerHTML = `
-                                    <p style="color: #e53e3e; font-weight: bold;">⚠️ عذراً، حدث خطأ أثناء تحضير العقد.</p>
-                                    <p style="font-size: 0.8rem; margin-top: 10px; color: #718096;">التفاصيل: ${err.message || 'خطأ غير معروف'}</p>
-                                    <p style="font-size: 0.8rem; border-top: 1px solid #ddd; margin-top: 10px; padding-top: 10px;">يرجى تصوير الشاشة وإرسالها للإدارة.</p>
-                                    <button class="btn btn-secondary btn-sm" onclick="location.reload()" style="margin-top:20px;">تحديث الصفحة</button>
-                                `;
-                            }
-                        }
-                    }, 100);
-                } else {
-                    // Normal Text Mode
-                    // Advanced HTML Variable Replacement (Smart Matching)
-                    let content = contract.content;
-                    const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
-
-                    // Possible variables to replace
-                    const varMappings = {
-                        'اسمالطالب': student.studentName || '',
-                        'اسموليالامر': student.parentName || '',
-                        'المسار': student.customFields?.studentTrack || student.studentTrack || '',
-                        'الصف': student.studentGrade ? `الصف ${student.studentGrade}` : '',
-                        'المرحلةالدراسية': student.studentLevel || '',
-                        'المرحلة': student.studentLevel || '',
-                        'السنةالدراسية': student.contractYear || '',
-                        'بريدوليالامر': student.parentEmail || '',
-                        'البريدالالكتروني': student.parentEmail || '',
-                        'هويةالطالب': student.customFields?.nationalId || student.nationalId || '',
-                        'رقمهويةالطالب': student.customFields?.nationalId || student.nationalId || '',
-                        'هويةوليالامر': student.customFields?.parentNationalId || '',
-                        'رقمهويةوليالامر': student.customFields?.parentNationalId || '',
-                        'جوالوليالامر': student.parentWhatsapp || '',
-                        'رقمجوالوليالامر': student.parentWhatsapp || '',
-                        'العنوان': student.address || student.customFields?.address || '',
-                        'الجنسية': student.nationality || student.customFields?.nationality || '',
-                        'التاريخ': new Date().toLocaleDateString('ar-SA')
-                    };
-
-                    // Identify all {variables} in content
-                    const foundVars = content.match(/{[^}]+}/g) || [];
-                    foundVars.forEach(v => {
-                        const target = cleanVar(v);
-                        if (varMappings[target] !== undefined) {
-                            content = content.replace(v, varMappings[target]);
-                        } else if (student.customFields) {
-                            // Check custom fields by label
-                            try {
-                                const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                                const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
-                                if (fieldDef) {
-                                    content = content.replace(v, student.customFields[fieldDef.id] || '');
-                                }
-                            } catch (e) { }
-                        }
-                    });
-
-                    const stampImage = window.SCHOOL_STAMP_IMAGE || (JSON.parse(localStorage.getItem('appSettings') || '{}')).stampImage;
-                    const stampHtml = stampImage
-                        ? `<div style="text-align:center; margin:20px 0;"><img src="${stampImage}" style="max-height:100px; width:auto;"></div>`
-                        : `<div class="school-stamp" style="width:100px; height:100px; border:4px double #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:20px auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${window.SCHOOL_STAMP_TEXT || 'الإدارة'}</div></div>`;
-
-                    currentStudent.cachedContractContent = content;
-                    currentStudent.cachedContractTitle = contract.title;
-                    currentStudent.contractType = 'text';
-
-                    contractTextDiv.innerHTML = `<h3 style="font-size: 1.15rem; margin-bottom: 0.5rem;">${contract.title}</h3><div style="font-size: 0.92rem; line-height: 1.6;">${content.replace(/\n/g, '<br>')}</div><br>${stampHtml}`;
-                }
-            }
+            console.log('✅ Contract found, rendering. Title:', contract.title, 'Content length:', (contract.content || '').length);
+            renderContractText(contract, student);
         } else {
-            // Error Handling: If no contract could be loaded
+            console.error('❌ No contract found after all attempts! Student:', student.id, 'TemplateId:', student.contractTemplateId);
             const textDiv = document.querySelector('.contract-text');
             if (textDiv) {
-                textDiv.innerHTML = `
-                    <div style="padding:40px; text-align:center;">
-                        <div style="font-size:3rem; margin-bottom:15px;">⚠️</div>
-                        <h3 style="color:#e53e3e;">عذراً، لم نتمكن من العثور على محتوى العقد</h3>
-                        <p style="color:#718096; margin-top:10px;">يبدو أن هناك مشكلة في رابط العقد أو أن القالب قد تم حذفه من النظام.</p>
-                        <button class="btn btn-secondary btn-sm" onclick="location.reload()" style="margin-top:20px;">تحديث الصفحة</button>
-                    </div>
-                `;
+                textDiv.innerHTML = `<div style="padding:40px; text-align:center;"><h3>عذراً، لم نتمكن من تحميل العقد</h3><p>يرجى مراجعة الإدارة.</p></div>`;
             }
         }
 
-        // If status is pending/sent, definitely let them sign
         if (student.contractStatus === 'pending' || student.contractStatus === 'sent') {
             console.log('✅ Status is pending/sent, allowing signature');
         }
@@ -488,68 +399,267 @@ async function loadStudentData() {
     return null;
 }
 
-function showAlreadySignedSimplified(student) {
-    document.getElementById('mainContainer').style.display = 'none';
-    const successContainer = document.getElementById('successContainer');
-    successContainer.style.display = 'block';
+/**
+ * Renders the contract content (Text or PDF) into the viewer
+ */
+function renderContractText(contract, student) {
+    const contractTextDiv = document.querySelector('.contract-text');
+    if (!contractTextDiv) { console.error('❌ .contract-text element not found!'); return; }
 
-    const card = successContainer.querySelector('.success-card');
-    if (card) {
-        card.innerHTML = `
-            <div class="success-icon" style="background: var(--success-gradient);">📝</div>
-            <h2 class="success-title">تم توقيع العقد مسبقاً</h2>
-            <p class="success-subtitle" style="margin-bottom: 2rem;">تم توقيع هذا العقد وإرساله بنجاح مسبقاً.</p>
-            
-            <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:var(--text-muted); font-weight:600;">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted); font-weight:600;">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${student.signedAt ? new Date(student.signedAt).toLocaleString('ar-SA') : '---'}</span></div>
-            </div>
+    console.log('📄 renderContractText called:', {
+        title: contract.title || 'NONE',
+        contentLength: contract.content ? contract.content.length : 0,
+        type: contract.type || 'text',
+        hasPdfData: !!contract.pdfData
+    });
 
-            <div class="success-actions">
-                <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">📥 تحميل العقد المكتمل (PDF)</button>
-                <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">🖨️ طباعة العقد</button>
-            </div>
-        `;
+    const isPdf = (contract.type === 'pdf_template') || (contract.content && contract.content.startsWith('قالب PDF:'));
+
+    // FALLBACK: If it's a PDF but data is missing, try fetching it from CloudDB
+    if (isPdf && !contract.pdfData && student.contractTemplateId) {
+        console.log('🔄 PDF data missing, attempting last-resort fetch from cloud...');
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            CloudDB.getContractTemplate(student.contractTemplateId).then(remote => {
+                if (remote && remote.pdfData) {
+                    console.log('✅ PDF data fetched successfully in last-resort');
+                    contract.pdfData = remote.pdfData;
+                    renderContractText(contract, student);
+                } else {
+                    contractTextDiv.innerHTML = `<div style="padding:40px; text-align:center; color:#e11d48;">
+                        <h3>⚠️ تعذر تحميل ملف العقد</h3>
+                        <p>يرجى التأكد من اتصال الإنترنت أو محاولة تحديث الصفحة.</p>
+                    </div>`;
+                }
+            }).catch(err => {
+                console.error("Cloud fetch failed:", err);
+            });
+        }
     }
 
-    if (student.signature) signatureData = student.signature;
-    if (student.idImage) uploadedFile = student.idImage;
-    currentStudent = student;
+    if (isPdf && contract.pdfData) {
+        contractTextDiv.innerHTML = `
+            <div style="text-align:center; padding: 20px;">
+                <h3 style="color: var(--primary-color);">${contract.title}</h3>
+                <div id="pdf-loading-state" style="padding: 40px; background: #f1f5f9; border-radius: 12px; margin-bottom: 20px;">
+                    <div class="loading"></div>
+                    <p style="margin-top: 15px; color: #4a5568; font-weight: bold;">جاري تحضير العقد ببياناتك... يرجى الانتظار</p>
+                </div>
+                <div id="pdf-preview-container" style="display:none; border: 2px solid var(--border-color); border-radius: 12px; background: #525659; overflow: auto; max-height: 800px; padding: 10px;">
+                    <canvas id="pdf-preview-canvas" style="max-width: 100%; height: auto;"></canvas>
+                </div>
+            </div>
+        `;
+        currentStudent.contract = contract;
+        currentStudent.contractType = 'pdf_template';
 
-    setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+        setTimeout(async () => {
+            try {
+                const pdfBytes = await generatePdfFromTemplate(contract, student);
+                if (pdfBytes) {
+                    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                    const url = window.URL.createObjectURL(blob);
+                    const loadingState = document.getElementById('pdf-loading-state');
+                    if (loadingState) loadingState.style.display = 'none';
+                    const previewContainer = document.getElementById('pdf-preview-container');
+                    if (previewContainer) {
+                        previewContainer.style.display = 'block';
+                        previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:800px; border:none; border-radius:8px;"></iframe>`;
+                    }
+                }
+            } catch (err) {
+                console.error("PDF Preview failed:", err);
+                const loadingState = document.getElementById('pdf-loading-state');
+                if (loadingState) {
+                    loadingState.innerHTML = `<div style="color:#e11d48; font-weight:bold;">
+                        ❌ حدث خطأ أثناء تجهيز العقد:<br>${err.message}
+                    </div>`;
+                }
+            }
+        }, 100);
+    } else {
+        let content = contract.content || '';
+        const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+        const varMappings = {
+            'اسمالطالب': student.studentName || '',
+            'اسموليالامر': student.parentName || '',
+            'الصف': student.studentGrade ? `الصف ${student.studentGrade}` : '',
+            'المرحلة': student.studentLevel || '',
+            'السنةالدراسية': student.contractYear || '',
+            'هويةالطالب': student.nationalId || '',
+            'هويةوليالامر': student.parentNationalId || '',
+            'التاريخ': new Date().toLocaleDateString('ar-SA')
+        };
+
+        const foundVars = content.match(/{[^}]+}/g) || [];
+        foundVars.forEach(v => {
+            const target = cleanVar(v);
+            if (varMappings[target] !== undefined) {
+                content = content.replace(v, varMappings[target]);
+            }
+        });
+
+        const stampImage = window.SCHOOL_STAMP_IMAGE || (JSON.parse(localStorage.getItem('appSettings') || '{}')).stampImage;
+        const stampHtml = stampImage
+            ? `<div style="text-align:center; margin:20px 0;"><img src="${stampImage}" style="max-height:100px;"></div>`
+            : `<div style="text-align:center; margin:20px 0; color:#2563eb; font-weight:bold; border:2px solid #2563eb; width:100px; height:100px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:20px auto;">${window.SCHOOL_STAMP_TEXT || 'الإدارة'}</div>`;
+
+        currentStudent.cachedContractContent = content;
+        currentStudent.cachedContractTitle = contract.title;
+        currentStudent.contractType = 'text';
+        contractTextDiv.innerHTML = `<h3 style="font-size: 1.15rem; margin-bottom: 0.5rem;">${contract.title}</h3><div style="font-size: 0.92rem; line-height: 1.6;">${content.replace(/\n/g, '<br>')}</div><br>${stampHtml}`;
+    }
 }
 
-// NEW: Success message for FRESH signatures (first-time signing)
+
+function safeDate(dateStr) {
+    try {
+        if (!dateStr) return '---';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '---';
+        return d.toLocaleDateString('ar-SA');
+    } catch (e) { return '---'; }
+}
+
+function showAlreadySignedSimplified(student, isFirstTime = false) {
+    const mainContainer = document.getElementById('mainContainer');
+    const successContainer = document.getElementById('successContainer');
+
+    if (!successContainer) {
+        console.error("Success container not found!");
+        return;
+    }
+
+    try {
+        const card = successContainer.querySelector('.success-card');
+        if (card) {
+            const isVerified = student.contractStatus === 'verified';
+            const icon = isFirstTime ? '🎉' : '✅';
+            const title = isFirstTime ? 'تم التوقيع بنجاح!' : 'تم توقيع العقد مسبقاً';
+            const subtitle = isFirstTime
+                ? 'شكراً لك! لقد تم استلام توقيعك وحفظه بنجاح في النظام.'
+                : 'هذا العقد قد تم توقيعه وإرساله من قبل. يمكنك تحميل نسخة PDF أو طباعته.';
+
+            const statusLabel = isVerified ? 'موثق ومعتمد ✓' : 'موقع ومحفوظ';
+            const statusColor = isVerified ? '#059669' : '#0284c7';
+            const statusBg = isVerified ? '#ecfdf5' : '#f0f9ff';
+
+            card.innerHTML = `
+                <div class="success-icon" style="background: var(--success-gradient); margin-bottom: 2rem;">${icon}</div>
+                <h2 class="success-title" style="font-size: 2.2rem; color: #1e293b; margin-bottom: 0.5rem;">${title}</h2>
+                <p class="success-subtitle" style="font-size: 1.1rem; color: #64748b; max-width: 500px; margin: 0 auto 2.5rem;">${subtitle}</p>
+                
+                <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 20px; padding: 2rem; margin-bottom: 2.5rem; text-align: right; position: relative;">
+                    <div style="position: absolute; top: 1.5rem; left: 1.5rem; padding: 0.5rem 1rem; border-radius: 999px; background: ${statusBg}; color: ${statusColor}; font-weight: 800; font-size: 0.85rem; border: 1px solid ${statusColor}40;">
+                        ${statusLabel}
+                    </div>
+                    
+                    <h4 style="margin-top:0; color: #4f46e5; font-size: 1.2rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.5rem;">👤</span> تفاصيل الطالب والعقد
+                    </h4>
+                    
+                    <div style="display:grid; gap: 1rem;">
+                        <div style="display:flex; justify-content:space-between; padding-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0;">
+                            <span style="color:#64748b; font-weight: 600;">اسم الطالب:</span>
+                            <span style="font-weight:800; color: #1e293b;">${student.studentName || '---'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0;">
+                            <span style="color:#64748b; font-weight: 600;">المرحلة / الصف:</span>
+                            <span style="font-weight:800; color: #1e293b;">${student.studentLevel || '---'} / ${student.studentGrade || '---'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0;">
+                            <span style="color:#64748b; font-weight: 600;">رقم العقد:</span>
+                            <span style="font-weight:900; color: #4f46e5; font-family: monospace; font-size: 1.1rem;">${student.contractNo || '---'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="color:#64748b; font-weight: 600;">تاريخ التوقيع:</span>
+                            <span style="font-weight:700; color: #1e293b;">${student.signedAt ? new Date(student.signedAt).toLocaleDateString('ar-SA') : '---'}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="success-actions" style="display: grid; gap: 1rem;">
+                    <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%; height: 65px; font-size: 1.2rem; border-radius: 16px;">
+                        📥 تحميل نسخة العقد (PDF)
+                    </button>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <button class="btn btn-secondary" onclick="printContract()" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
+                            🖨️ طباعة
+                        </button>
+                        <button class="btn btn-secondary" id="viewContractBtn" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
+                            👁️ معاينة العقد
+                        </button>
+                    </div>
+                </div>
+                
+                <p style="margin-top: 2rem; color: #94a3b8; font-size: 0.85rem;">يمكنك الاحتفاظ بالرابط للعودة لهذه الصفحة لاحقاً</p>
+            `;
+
+            if (mainContainer) {
+                mainContainer.style.display = 'none';
+                document.body.classList.add('view-success');
+            }
+            successContainer.style.display = 'block';
+            successContainer.scrollIntoView({ behavior: 'smooth' });
+
+            if (student.signature) signatureData = student.signature;
+            if (student.idImage) uploadedFile = student.idImage;
+            if (student.extraDocs) extraDocs = student.extraDocs || [];
+            currentStudent = student;
+
+            setTimeout(() => {
+                if (typeof setupPdfDownload === 'function') {
+                    setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+                }
+
+                // Setup View Contract Toggle
+                const viewBtn = document.getElementById('viewContractBtn');
+                if (viewBtn && mainContainer) {
+                    viewBtn.onclick = () => {
+                        successContainer.style.display = 'none';
+                        mainContainer.style.display = 'block';
+                        document.body.classList.remove('view-success');
+
+                        // Add a "Back to Success" button in the main container if not exists
+                        let backBtn = document.getElementById('backToSuccessBtn');
+                        if (!backBtn) {
+                            backBtn = document.createElement('button');
+                            backBtn.id = 'backToSuccessBtn';
+                            backBtn.className = 'btn btn-primary';
+                            backBtn.innerHTML = '🔙 العودة لصفحة الإنجاز';
+                            backBtn.style.cssText = 'position:fixed; bottom:20px; left:20px; z-index:1000; padding:10px 20px; box-shadow:0 4px 12px rgba(0,0,0,0.2);';
+                            backBtn.onclick = () => {
+                                mainContainer.style.display = 'none';
+                                successContainer.style.display = 'block';
+                                document.body.classList.add('view-success');
+                            };
+                            document.body.appendChild(backBtn);
+                        }
+
+                        // Hide interactive elements (signature/uploads) to make it read-only look
+                        const docsStep = document.getElementById('docsStep');
+                        if (docsStep) docsStep.style.display = 'none'; // Hide upload/sign area to avoid confusion
+
+                        // Ensure contract text container uses full width if needed
+                        const contractCard = document.querySelector('.section-card:first-child');
+                        if (contractCard) contractCard.style.maxWidth = '100%';
+                    };
+                }
+            }, 200);
+        }
+    } catch (e) {
+        console.error("Error rendering success card:", e);
+    }
+}
+
 function showSuccessAfterSigning(student) {
-    document.getElementById('mainContainer').style.display = 'none';
-    const successContainer = document.getElementById('successContainer');
-    successContainer.style.display = 'block';
-
-    const card = successContainer.querySelector('.success-card');
-    if (card) {
-        card.innerHTML = `
-            <div class="success-icon" style="background: var(--success-gradient);">✓</div>
-            <h2 class="success-title">تم التوقيع بنجاح! 🎉</h2>
-            <p class="success-subtitle" style="margin-bottom: 2rem;">شكراً لك! تم توقيع العقد وإرساله بنجاح.</p>
-            
-            <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:var(--text-muted); font-weight:600;">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted); font-weight:600;">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${student.signedAt ? new Date(student.signedAt).toLocaleString('ar-SA') : '---'}</span></div>
-            </div>
-
-            <div class="success-actions">
-                <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">📥 تحميل العقد المكتمل (PDF)</button>
-                <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">🖨️ طباعة العقد</button>
-            </div>
-        `;
-    }
-
-    if (student.signature) signatureData = student.signature;
-    if (student.idImage) uploadedFile = student.idImage;
-    currentStudent = student;
-
-    setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+    showAlreadySignedSimplified(student, true);
 }
+
+// Make globally accessible
+window.printContract = function () {
+    window.print();
+};
+
 
 // Helper to get professional PDF/Print HTML
 function getContractPdfHtml(studentName, contractNo) {
@@ -568,12 +678,26 @@ function getContractPdfHtml(studentName, contractNo) {
     tempDiv.querySelectorAll('h3').forEach(el => el.remove());
     safeContractText = tempDiv.innerHTML.replace(/\n/g, '<br>');
 
-    const idCardSection = uploadedFile ? `
-        <div style="margin-top:25px; border-top:1px dashed #ccc; padding-top:20px; text-align:center; page-break-inside:avoid;">
-            <p style="margin:0 0 10px; font-weight:bold;">صورة هوية ولي الأمر</p>
-            <img src="${uploadedFile}" style="max-height:250px; max-width:90%; border:1px solid #ddd; padding:5px; border-radius:4px;">
-        </div>` : '';
+    let docsHtml = '';
+    let allExtraDocs = [...extraDocs]; // Use the global extraDocs
+    if (currentStudent?.extraDocs) {
+        currentStudent.extraDocs.forEach(d => { if (!allExtraDocs.includes(d)) allExtraDocs.push(d); });
+    }
+    // Fallback for old fields
+    if (currentStudent?.birthCertImage && !allExtraDocs.includes(currentStudent.birthCertImage)) allExtraDocs.push(currentStudent.birthCertImage);
+    if (currentStudent?.passportImage && !allExtraDocs.includes(currentStudent.passportImage)) allExtraDocs.push(currentStudent.passportImage);
 
+    if (allExtraDocs.length > 0) {
+        allExtraDocs.forEach((doc, idx) => {
+            docsHtml += `
+            <div style="margin-top:25px; border-top:1px dashed #ccc; padding-top:20px; text-align:center; page-break-before:always;">
+                <p style="margin:0 0 10px; font-weight:bold;">مستند إضافي (${idx + 1})</p>
+                <img src="${doc}" style="max-height:850px; max-width:95%; border:1px solid #ddd; padding:5px; border-radius:4px;">
+            </div>`;
+        });
+    }
+
+    // Extra docs support restored
     return `
         <div style="direction:rtl; font-family:'Cairo', sans-serif; background:white; padding:5mm 10mm; width:100%; box-sizing:border-box; color:#1a202c;">
             <div style="background:white; position:relative;">
@@ -606,18 +730,23 @@ function getContractPdfHtml(studentName, contractNo) {
                         </tr>
                     </table>
                     ${uploadedFile ? `
-                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center;">
-                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة هوية ولي الأمر</p>
-                        <img src="${uploadedFile}" style="max-height:180px; max-width:80%; border:1px solid #edf2f7; border-radius:8px;">
+                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة الهوية</p>
+                        <img src="${uploadedFile}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
                     </div>` : ''}
+                    ${docsHtml}
                 </div>
             </div>
         </div>`;
 }
 
 function setupPdfDownload(studentName, contractNo) {
-    const btn = document.getElementById('downloadPdfBtn');
-    if (!btn) return;
+    const oldBtn = document.getElementById('downloadPdfBtn');
+    if (!oldBtn) return;
+
+    // Clone to remove old listeners and prevent duplicates
+    const btn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(btn, oldBtn);
 
     btn.addEventListener('click', async function () {
         this.disabled = true;
@@ -762,7 +891,16 @@ function printContract() {
 
 function showLoadError() {
     const main = document.getElementById('mainContainer');
-    if (main) main.innerHTML = '<div style="text-align:center; padding:5rem 2rem;"><h2>⚠️ الرابط غير صالح أو منتهي</h2></div>';
+    if (main) {
+        main.innerHTML = `
+            <div style="text-align:center; padding:5rem 2rem; background: var(--white); border-radius: 20px; box-shadow: var(--shadow-lg); margin: 2rem;">
+                <div style="font-size: 4rem; margin-bottom: 1.5rem;">⚠️</div>
+                <h2 style="color: var(--danger-gradient); margin-bottom: 1rem;">عذراً، الرابط غير صالح</h2>
+                <p style="color: var(--text-muted); font-size: 1.1rem;">يبدو أن هذا الرابط منتهي الصلاحية أو غير صحيح. يرجى التواصل مع إدارة المدرسة للحصول على رابط جديد.</p>
+                <button onclick="location.reload()" class="btn btn-primary" style="margin-top: 2rem;">تحديث الصفحة</button>
+            </div>
+        `;
+    }
 }
 
 // CANVAS DRAWING (With persistence on resize)
@@ -827,70 +965,157 @@ document.getElementById('captureBtn')?.addEventListener('click', () => document.
 
 document.getElementById('removeFile')?.addEventListener('click', () => { uploadedFile = null; document.getElementById('uploadArea').style.display = 'block'; document.getElementById('uploadedPreview').style.display = 'none'; updateProgress(); validateForm(); });
 
+// EXTRA DOCUMENTS HANDLER (Multiple Files)
+async function handleExtraDocs(e) {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    for (const file of files) {
+        const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                const img = new Image();
+                img.onload = () => {
+                    const c = document.createElement('canvas'); const max = 1200;
+                    let w = img.width, h = img.height;
+                    if (w > max) { h = h * (max / w); w = max; }
+                    c.width = w; c.height = h;
+                    c.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve(c.toDataURL('image/jpeg', 0.85));
+                };
+                img.src = re.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+        extraDocs.push(dataUrl);
+    }
+    renderExtraDocs();
+    updateProgress();
+    validateForm();
+}
+
+function renderExtraDocs() {
+    const list = document.getElementById('extraDocsList');
+    if (!list) return;
+    list.innerHTML = extraDocs.map((doc, idx) => `
+        <div class="uploaded-preview" style="display:block; margin:0; position:relative;">
+            <button class="remove-btn" onclick="removeExtraDoc(${idx})">×</button>
+            <img src="${doc}" style="width:100%; height:100px; object-fit:cover; border-radius:8px; border:1px solid #ddd;">
+        </div>
+    `).join('');
+}
+
+function removeExtraDoc(idx) {
+    extraDocs.splice(idx, 1);
+    renderExtraDocs();
+    updateProgress();
+    validateForm();
+}
+
+document.getElementById('extraDocsUpload')?.addEventListener('change', handleExtraDocs);
+
 function validateForm() {
     const btn = document.getElementById('submitContract'); if (!btn) return;
     const agreed = document.getElementById('agreeTerms')?.checked || false;
-    btn.disabled = !(uploadedFile && hasDrawn && agreed);
+
+    // Check extra files if mustajid
+    const isNew = currentStudent?.registrationType === 'mustajid';
+
+    let docsOk = !!uploadedFile;
+    if (isNew) {
+        if (!extraDocs || extraDocs.length === 0) docsOk = false;
+    }
+
+    btn.disabled = !(docsOk && hasDrawn && agreed);
 }
 
 document.getElementById('agreeTerms')?.addEventListener('change', validateForm);
 
 document.getElementById('submitContract')?.addEventListener('click', async () => {
-    const btn = document.getElementById('submitContract'); if (btn.disabled) return;
-    btn.disabled = true;
-    document.getElementById('submitText').innerHTML = 'جاري الإرسال المأمون...';
-    signatureData = canvas.toDataURL('image/png');
-    const contractNo = 'CON-' + Date.now().toString().slice(-6);
-    const now = new Date();
-    // Update global currentStudent object immediately so generates PDF correctly
-    if (typeof currentStudent !== 'undefined') {
-        currentStudent.contractStatus = 'signed';
-        currentStudent.signedAt = now.toISOString();
-        currentStudent.signature = signatureData;
-        currentStudent.idImage = uploadedFile;
-        currentStudent.contractNo = contractNo;
-    }
+    const btn = document.getElementById('submitContract');
+    if (btn.disabled) return;
 
-    if (studentIdToSave) {
-        const data = { contractStatus: 'signed', signedAt: now.toISOString(), signature: signatureData, idImage: uploadedFile, contractNo };
-        if (typeof CloudDB !== 'undefined') await CloudDB.updateContract(String(studentIdToSave), data);
+    try {
+        btn.disabled = true;
+        document.getElementById('submitText').innerHTML = 'جاري الحفظ والإرسال...';
+
+        signatureData = canvas.toDataURL('image/png');
+        const contractNo = 'CON-' + Date.now().toString().slice(-6);
+        const now = new Date();
+
+        // Ensure student data is consistent
+        const studentToSave = {
+            ...currentStudent,
+            contractStatus: 'signed',
+            signedAt: now.toISOString(),
+            signature: signatureData,
+            idImage: uploadedFile,
+            extraDocs: extraDocs,
+            contractNo: contractNo
+        };
+
+        // 1. Save Locally (Highest Priority)
         const students = JSON.parse(localStorage.getItem('students') || '[]');
         const idx = students.findIndex(s => String(s.id) === String(studentIdToSave));
-        if (idx !== -1) { Object.assign(students[idx], data); localStorage.setItem('students', JSON.stringify(students)); }
-    }
+        if (idx !== -1) {
+            students[idx] = { ...students[idx], ...studentToSave };
+            localStorage.setItem('students', JSON.stringify(students));
+        }
 
-    // Call the correct function - showSuccessAfterSigning for FRESH signatures
-    const studentName = document.getElementById('contractStudentName')?.textContent || 'Student';
-    const successData = {
-        studentName,
-        contractNo,
-        signedAt: now.toISOString(),
-        signature: signatureData,
-        idImage: uploadedFile,
-        contractType: currentStudent?.contractType || 'text',
-        contract: currentStudent?.contract || null,
-        cachedContractContent: currentStudent?.cachedContractContent || '',
-        cachedContractTitle: currentStudent?.cachedContractTitle || ''
-    };
+        // 2. Save Updated Student to Current State
+        currentStudent = studentToSave;
 
-    if (typeof showSuccessAfterSigning === 'function') {
-        showSuccessAfterSigning(successData);
+        // 3. Save to Cloud (Background - don't let it block if slow)
+        if (studentIdToSave && typeof CloudDB !== 'undefined') {
+            CloudDB.updateContract(String(studentIdToSave), {
+                contractStatus: 'signed',
+                signedAt: now.toISOString(),
+                signature: signatureData,
+                idImage: uploadedFile,
+                extraDocs: extraDocs,
+                contractNo: contractNo
+            }).catch(e => console.warn("Cloud Sync Deferred:", e));
+        }
 
-        // Setup download button immediately
-        setTimeout(() => {
-            setupPdfDownload(studentName, contractNo);
-        }, 500);
-    } else if (typeof showAlreadySignedSimplified === 'function') {
-        // Fallback only if showSuccessAfterSigning doesn't exist
-        showAlreadySignedSimplified(successData);
+        // 4. Prepare Success Data - CACHE contract content before hiding main view
+        const studentName = document.getElementById('contractStudentName')?.textContent || currentStudent?.studentName || 'الطالب';
 
-        setTimeout(() => {
-            setupPdfDownload(studentName, contractNo);
-        }, 500);
-    } else {
-        console.error("Success function not found!");
-        alert("تم توقيع العقد بنجاح! (" + contractNo + ")");
-        location.reload();
+        // Save contract content before it gets hidden
+        if (!currentStudent.cachedContractContent) {
+            const contractTextEl = document.querySelector('.contract-text');
+            if (contractTextEl) {
+                currentStudent.cachedContractContent = contractTextEl.innerHTML;
+            }
+        }
+        if (!currentStudent.contractTitle) {
+            currentStudent.contractTitle = currentStudent.cachedContractTitle || 'عقد تسجيل طالب';
+        }
+
+        const successData = {
+            ...currentStudent,
+            studentName,
+            contractNo,
+            signedAt: now.toISOString()
+        };
+
+        // 5. Show Success UI
+        if (typeof showSuccessAfterSigning === 'function') {
+            showSuccessAfterSigning(successData);
+            setTimeout(() => { if (typeof setupPdfDownload === 'function') setupPdfDownload(studentName, contractNo); }, 800);
+        } else {
+            console.error("Success UI function not found");
+            alert("تم توقيع العقد بنجاح برقم: " + contractNo);
+            location.reload();
+        }
+    } catch (error) {
+        console.error("Submission Error:", error);
+        let errorMsg = "عذراً، حدث خطأ أثناء الإرسال. يرجى المحاولة مرة أخرى.";
+        if (error.name === 'QuotaExceededError') {
+            errorMsg = "عذراً، ذاكرة المتصفح ممتلئة. يرجى حذف بعض الملفات أو تصفح الصفحة في وضع الخصوصية (Incognito) والمحاولة مرة أخرى.";
+        }
+        alert(errorMsg + "\n\nتفاصيل: " + (error.message || error));
+        btn.disabled = false;
+        document.getElementById('submitText').innerHTML = 'إرسال العقد الموقع';
     }
 });
 
@@ -959,7 +1184,10 @@ async function generatePdfFromTemplate(template, studentData) {
 
     // Ensure critical dependencies are loaded (Hyper-Resiliency)
     if (!PDFLib_ref) {
-        try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'); } catch (e) { }
+        try { await loadScript('https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'); } catch (e) { }
+    }
+    if (typeof fontkit === 'undefined') {
+        try { await loadScript('https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js'); } catch (e) { }
     }
     if (typeof ArabicReshaper === 'undefined') {
         try { await loadScript('https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js'); } catch (e) {
@@ -982,11 +1210,25 @@ async function generatePdfFromTemplate(template, studentData) {
         cachedCairoFont = null;
         let log = [];
 
-        // STRATEGY A: Try CloudDB (Firebase) first - Most reliable for parents
-        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+        // STRATEGY A: Use Embedded Base64 Font from font-data.js (High Resilience)
+        if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
+            try {
+                console.log("💎 Using embedded Cairo font data...");
+                const binary = atob(GLOBAL_CAIRO_FONT);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                cachedCairoFont = bytes;
+            } catch (e) { console.warn("Embedded font failed, trying other sources:", e); }
+        }
+
+        // STRATEGY B: Try CloudDB (Firebase) - Only if still missing
+        if (!cachedCairoFont && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             try {
                 console.log("☁️ Attempting to load font from CloudDB...");
-                const cloudBase64 = await CloudDB.getFont('Amiri-Regular');
+                // Try Cairo first, then fallback
+                let cloudBase64 = await CloudDB.getFont('Cairo-Regular');
+                if (!cloudBase64) cloudBase64 = await CloudDB.getFont('Amiri-Regular');
+
                 if (cloudBase64) {
                     const binary = atob(cloudBase64);
                     const bytes = new Uint8Array(binary.length);
@@ -1006,10 +1248,9 @@ async function generatePdfFromTemplate(template, studentData) {
         // STRATEGY B: Fallback to External CDNs if cloud failed (using Amiri font - more reliable)
         if (!cachedCairoFont) {
             const fontSources = [
-                { id: 'Local', url: 'Amiri-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' },
-                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf' },
-                { id: 'Fontsource', url: 'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff' }
+                { id: 'Local', url: 'alfont_com_Cairo-Regular.ttf' },
+                { id: 'GStatic_Cairo', url: 'https://cdn.jsdelivr.net/gh/googlefonts/cairo@master/fonts/ttf/Cairo-Regular.ttf' },
+                { id: 'GStatic_Amiri', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' }
             ];
 
             for (const src of fontSources) {
@@ -1111,47 +1352,24 @@ async function generatePdfFromTemplate(template, studentData) {
 
     const pages = pdfDoc.getPages();
 
-    // Advanced Arabic Text Processor (Reshape + Reverse for PDF compatibility)
+    // Advanced Arabic Text Processor
     const fixArabic = (text) => {
         if (!text) return "";
         try {
             let str = String(text).trim();
-            // Check for Arabic characters (including presentation forms)
-            const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
+            const hasArabic = /[\u0600-\u06FF]/.test(str);
             if (!hasArabic) return str;
 
-            // 1. Reshape
-            if (typeof ArabicReshaper !== 'undefined') {
-                // Try to find the reshape function
-                if (typeof ArabicReshaper.convertArabic === 'function') {
-                    str = ArabicReshaper.convertArabic(str);
-                } else if (typeof ArabicReshaper.reshape === 'function') {
-                    str = ArabicReshaper.reshape(str);
-                } else if (ArabicReshaper.ArabicReshaper && typeof ArabicReshaper.ArabicReshaper.convertArabic === 'function') {
-                    str = ArabicReshaper.ArabicReshaper.convertArabic(str);
-                }
+            // 1. Reshape الحروف (مشتبكة)
+            const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
+            if (Reshaper) {
+                if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
+                else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
             }
 
-            // 2. Reverse for RTL
-            let reversed = str.split('').reverse().join('');
-
-            // 3. Fix LTR segments (numbers, english words)
-            // This regex matches sequences of non-Arabic characters that should be LTR
-            // We re-reverse them to restore their order
-            const ltrPattern = /[a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\s.,:;!?@#$%^&*()_+\-=\[\]{}<>|/\\~`"']+/g;
-
-            reversed = reversed.replace(ltrPattern, function (match) {
-                // Only re-reverse if it contains letters or numbers, to avoid messing up simple punctuation between Arabic words if any
-                if (/[a-zA-Z0-9]/.test(match)) {
-                    return match.split('').reverse().join('');
-                }
-                // For pure punctuation/spaces, context matters, but usually in RTL text, 
-                // if it's surrounded by Arabic, it flows RTL. 
-                // If it's "123", it flows LTR.
-                return match;
-            });
-
-            return reversed;
+            // 2. DO NOT Reverse for modern PDF readers with Cairo font
+            // The browser preview worked because it didn't reverse. We match that here.
+            return str;
         } catch (e) {
             console.error("Arabic fix error:", e);
             return text;
@@ -1162,52 +1380,53 @@ async function generatePdfFromTemplate(template, studentData) {
 
     for (const field of template.pdfFields) {
         const placeholder = field.variable;
-        let text = null;
         let isImage = false;
+        // Match variables (Case insensitive and stripped)
         const target = cleanVar(placeholder);
+        let text = "";
 
-        // Unified Variable Mapping
-        if (target === 'اسمالطالب') text = studentData.studentName || '';
-        else if (target === 'اسموليالامر') text = studentData.parentName || '';
+        // Comprehensive Field Mapping
+        if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
+        else if (target === 'اسموليالامر' || target === 'اسموليالأمر') text = studentData.parentName || studentData.customFields?.parentName || '';
         else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-        else if (target === 'الصف') text = studentData.studentGrade || '';
-        else if (target === 'المرحلة' || target === 'المرحلةالدراسية') text = studentData.studentLevel || '';
-        else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || studentData.contractYear || '';
-        else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
-        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية')
-            text = studentData.customFields?.nationalId || studentData.nationalId || '';
-        else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر')
+        else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || studentData.customFields?.studentGrade || '';
+        else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
+        else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
+        else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
+        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
+            text = studentData.nationalId || studentData.customFields?.nationalId || '';
+        else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
             text = studentData.customFields?.parentNationalId || '';
-        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
+        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب' || target === 'جوال' || target === 'الواتساب')
             text = studentData.parentWhatsapp || '';
         else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
         else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-        else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+        else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG'); // Specific Arabic Format
         else if (target === 'اليوم') {
             const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
             text = days[new Date().getDay()];
         }
         else if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
-            text = studentData.signature || signatureData;
+            text = studentData.signature || studentData.signatureData || null;
             isImage = true;
         }
-        else if (target === 'الهوية' || target === 'مكانالهوية') {
-            text = uploadedFile || studentData.idImage || studentData.idCardImage || null;
+        else if (target === 'الهوية' || target === 'مكانالهوية' || target === 'صورةالهوية' || target === 'صورهالهويه') {
+            text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile || null;
             isImage = true;
         }
         else if (target === 'الختم' || target === 'مكانالختم') {
             const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
             text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
             isImage = true;
-        } else {
-            if (studentData.customFields) {
-                try {
-                    const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                    const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
-                    if (fieldDef) {
-                        text = studentData.customFields[fieldDef.id] || '';
-                    }
-                } catch (e) { }
+        }
+
+        // Ultimate Fallback: Direct search by cleaned label in customFields
+        if (!text && studentData.customFields && !isImage) {
+            for (let k in studentData.customFields) {
+                if (cleanVar(k) === target) {
+                    text = studentData.customFields[k];
+                    break;
+                }
             }
         }
 
@@ -1255,7 +1474,9 @@ async function generatePdfFromTemplate(template, studentData) {
         } else {
             try {
                 const size = 11;
-                const fixed = fixArabic(text);
+                // isForPdf = signatureData !== null (If we have signature, it's likely a final build for download)
+                const isFinal = signatureData !== null;
+                const fixed = fixArabic(text, isFinal);
                 const tw = customFont.widthOfTextAtSize(fixed, size);
                 let dx = pdfX + (fW - tw) / 2;
                 if (tw > fW * 0.9) dx = pdfX + fW - tw - 5;
@@ -1265,8 +1486,85 @@ async function generatePdfFromTemplate(template, studentData) {
             }
         }
     }
+    // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
+    // 1. Identity Document
+    const docsToAppend = [];
+    if (studentData.idImage || uploadedFile) {
+        docsToAppend.push({
+            data: studentData.idImage || uploadedFile,
+            label: 'صورة الهوية'
+        });
+    }
+
+    // 2. Extra Documents
+    let extras = [...(extraDocs || [])];
+    if (studentData.extraDocs) {
+        studentData.extraDocs.forEach(d => { if (!extras.includes(d)) extras.push(d); });
+    }
+    // Fallback for old fields
+    if (studentData.birthCertImage && !extras.includes(studentData.birthCertImage)) extras.push(studentData.birthCertImage);
+    if (studentData.passportImage && !extras.includes(studentData.passportImage)) extras.push(studentData.passportImage);
+
+    extras.forEach((data, idx) => {
+        if (data) docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
+    });
+
+    for (const doc of docsToAppend) {
+        if (doc.data) {
+            try {
+                const page = pdfDoc.addPage([595, 842]); // A4 Size
+                const { width, height } = page.getSize();
+                let b64 = doc.data;
+
+                // Header for the page
+                try {
+                    const font = customFont || await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+                    page.drawText(fixArabic(doc.label), {
+                        x: width / 2 - 50,
+                        y: height - 50,
+                        size: 20,
+                        font: font,
+                        color: PDFLib.rgb(0, 0, 0),
+                    });
+                } catch (eText) { console.warn("Text draw failed on extra page", eText); }
+
+                if (b64.includes(',')) b64 = b64.split(',')[1];
+
+                let img;
+                if (doc.data.startsWith('data:image/png')) img = await pdfDoc.embedPng(b64);
+                else img = await pdfDoc.embedJpg(b64);
+
+                if (img) {
+                    const dims = img.scaleToFit(500, 700);
+                    page.drawImage(img, {
+                        x: (width - dims.width) / 2,
+                        y: (height - dims.height) / 2,
+                        width: dims.width,
+                        height: dims.height
+                    });
+                }
+            } catch (e) {
+                console.error(`Failed to embed ${doc.label}:`, e);
+            }
+        }
+    }
     return await pdfDoc.save();
 }
 
-window.addEventListener('load', async () => { const std = await loadStudentData(); if (std) { resizeCanvas(); updateProgress(); } });
+// Since contract.js is loaded dynamically, window 'load' may have already fired.
+// We call the init function directly and also register the resize handler.
 window.addEventListener('resize', resizeCanvas);
+
+(async function init() {
+    // If DOM is already ready, run immediately; otherwise wait for DOMContentLoaded
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', async () => {
+            const std = await loadStudentData();
+            if (std) { resizeCanvas(); updateProgress(); }
+        });
+    } else {
+        // DOM is already loaded (most likely case when script is injected dynamically)
+        const std = await loadStudentData();
+        if (std) { resizeCanvas(); updateProgress(); }
+    }
+})();

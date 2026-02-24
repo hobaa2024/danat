@@ -152,6 +152,29 @@
             background: #fee2e2;
             color: #991b1b;
         }
+
+        @keyframes shake {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translateX(-5px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translateX(5px);
+            }
+        }
     </style>
 
     <!-- Libraries -->
@@ -188,27 +211,78 @@
 <body class="admin-body">
     <!-- Admin Login Screen -->
     <div id="loginOverlay"
-        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; display: flex; align-items: center; justify-content: center;">
-        <div class="card" style="width: 400px; padding: 2.5rem; text-align: center;">
-            <div class="logo-container" style="margin-bottom: 2rem;">
-                <img id="loginLogo" src="assets/logo.png" alt="Logo"
-                    style="max-height: 80px; width: auto; max-width: 100%;">
-                <h2 style="margin-top: 1rem; color: var(--primary-solid);">نظام العقود المدرسية</h2>
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; display: flex; align-items: center; justify-content: center; background: #1e3a8a; overflow: hidden;">
+
+        <!-- Premium Dynamic Background -->
+        <div id="loginBg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+                   background-image: url('assets/login-bg.jpg'); 
+                   background-size: cover; background-position: center; 
+                   filter: blur(10px) brightness(0.6); transform: scale(1.1);
+                   z-index: 0;">
+        </div>
+
+        <!-- Animated Gradients -->
+        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+                    background: linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(118, 75, 162, 0.4) 100%);
+                    z-index: 1;">
+        </div>
+
+        <div class="card shadow-xl" style="width: 450px; padding: 3rem; text-align: center; background: rgba(255, 255, 255, 0.95); 
+                   backdrop-filter: blur(20px); border-radius: 30px; position: relative; z-index: 2;
+                   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.3);">
+
+            <div class="logo-container" style="margin-bottom: 2.5rem;">
+                <div
+                    style="background: white; width: 120px; height: 120px; border-radius: 50%; margin: 0 auto 1.5rem; 
+                            display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); border: 3px solid #667eea;">
+                    <img id="loginLogo" src="assets/logo.png" alt="Logo"
+                        onerror="this.src='https://via.placeholder.com/200x80?text=Dana+School'"
+                        style="max-height: 80px; width: auto; max-width: 90%; object-fit: contain;">
+                </div>
+                <h2 style="color: #1e3a8a; font-weight: 900; font-size: 1.8rem; margin-bottom: 0.5rem;">مدارس دانة
+                    العلوم</h2>
+                <div style="height: 4px; width: 60px; background: #667eea; margin: 1rem auto; border-radius: 2px;">
+                </div>
+                <p style="color: #64748b; font-weight: 600;">نظام العقود المدرسية الذكي</p>
             </div>
-            <div class="form-group" style="text-align: right; margin-bottom: 1rem;">
-                <label for="adminUserInput">اسم المستخدم</label>
-                <input type="text" id="adminUserInput" placeholder="أدخل اسم المستخدم"
-                    style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid #ddd;">
+
+            <div class="form-group" style="text-align: right; margin-bottom: 1.5rem;">
+                <label
+                    style="display: block; margin-bottom: 0.5rem; font-weight: bold; color: #1e3a8a; font-size: 0.9rem;">اسم
+                    المستخدم</label>
+                <div style="position: relative;">
+                    <input type="text" id="adminUserInput" placeholder="أدخل اسم المستخدم"
+                        style="width: 100%; padding: 1rem; padding-right: 3rem; border-radius: 15px; border: 2px solid #e2e8f0; outline: none; transition: all 0.3s; font-family: Cairo;"
+                        onfocus="this.style.borderColor='#667eea'; this.style.boxShadow='0 0 0 4px rgba(102, 126, 234, 0.1)'"
+                        onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <span
+                        style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.5;">👤</span>
+                </div>
             </div>
-            <div class="form-group" style="text-align: right;">
-                <label for="adminPassInput">كلمة المرور</label>
-                <input type="password" id="adminPassInput" placeholder="أدخل كلمة المرور"
-                    style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid #ddd;">
+
+            <div class="form-group" style="text-align: right; margin-bottom: 2rem;">
+                <label
+                    style="display: block; margin-bottom: 0.5rem; font-weight: bold; color: #1e3a8a; font-size: 0.9rem;">كلمة
+                    المرور</label>
+                <div style="position: relative;">
+                    <input type="password" id="adminPassInput" placeholder="أدخل كلمة المرور"
+                        style="width: 100%; padding: 1rem; padding-right: 3rem; border-radius: 15px; border: 2px solid #e2e8f0; outline: none; transition: all 0.3s; font-family: Cairo;"
+                        onfocus="this.style.borderColor='#667eea'; this.style.boxShadow='0 0 0 4px rgba(102, 126, 234, 0.1)'"
+                        onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <span
+                        style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔒</span>
+                </div>
             </div>
-            <button class="btn btn-primary" onclick="UI.handleLogin()"
-                style="width: 100%; margin-top: 1.5rem;">الدخول</button>
-            <p id="loginError" style="color: #ef4444; margin-top: 1rem; display: none; font-size: 0.9rem;">بيانات الدخول
-                غير صحيحة</p>
+
+            <button class="btn btn-primary" onclick="UI.handleLogin()" style="width: 100%; padding: 1.2rem; border-radius: 15px; font-weight: 800; font-size: 1.1rem; 
+                       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                       border: none; color: white; cursor: pointer; transition: all 0.3s;
+                       box-shadow: 0 10px 25px -5px rgba(102, 126, 234, 0.5);">
+                دخول النظام
+            </button>
+            <p id="loginError"
+                style="color: #ef4444; margin-top: 1.5rem; display: none; font-weight: bold; padding: 0.75rem; background: #fee2e2; border-radius: 10px; border: 1px solid #fecaca; font-size: 0.9rem;">
+                ⚠️ بيانات الدخول غير صحيحة</p>
         </div>
     </div>
     <!-- Navigation -->
@@ -865,6 +939,9 @@
 
                             <button class="btn btn-secondary" onclick="UI.bulkUpdateStatus('verified')"
                                 style="font-size: 0.85rem; padding: 0.5rem 1rem;">توثيق المحدد</button>
+                            <button class="btn btn-secondary" onclick="UI.bulkArchiveStudents()"
+                                style="font-size: 0.85rem; padding: 0.5rem 1rem; color: #6366f1; border-color: #6366f1;">📦
+                                أرشفة المحدد</button>
                             <button id="deleteSelectedBtnMain" class="btn btn-danger"
                                 style="font-size: 0.85rem; padding: 0.5rem 1rem;" onclick="UI.deleteSelectedStudents()">
                                 حذف المحدد (<span id="selectedCountMain">0</span>)
@@ -1049,6 +1126,15 @@
                             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
                         </svg>
                         النظام والنسخ الاحتياطي
+                    </button>
+                    <button class="tab-btn" onclick="UI.switchSettingsTab('migration')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="8.5" cy="7" r="4"></circle>
+                            <polyline points="17 11 19 13 23 9"></polyline>
+                        </svg>
+                        الترحيل السنوي والأرشفة
                     </button>
                 </div>
 
@@ -1357,7 +1443,84 @@
                                 <p style="font-weight: 700;">حذف جميع البيانات المحلية</p>
                                 <p style="font-size: 0.9rem; color: var(--text-muted);">سيتم مسح كافة البيانات من
                                     هذا
-                                    <button class="btn btn-danger" onclick="UI.wipeAllData()">مسح كافة البيانات (محلي + سحابي)</button>
+                                    <button class="btn btn-danger" onclick="UI.wipeAllData()">مسح كافة البيانات (محلي +
+                                        سحابي)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 5: Annual Migration -->
+                <div id="tab-migration" class="tab-content">
+                    <div style="display: grid; gap: 2rem;">
+                        <!-- Migration Wizard -->
+                        <div class="card" style="border-right: 4px solid var(--primary-main);">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">مساعد الترحيل السنوي (ترفيع الطلاب)</h3>
+                                <p style="font-size:0.85rem; color:var(--text-muted)">استخدم هذه الأداة لنقل الطلاب
+                                    للصفوف التالية وتصفير التواقيع للسنة الدراسية الجديدة.</p>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div
+                                    style="background: #fdf2f2; border: 1px solid #fecaca; padding: 1.25rem; border-radius: 12px; color: #991b1b; margin-bottom: 2rem; font-size: 0.95rem; border-right: 5px solid #ef4444;">
+                                    <strong>⚠️ تنبيه هام جداً:</strong><br>
+                                    1. سيتم ترفيع كل طالب للصف الذي يليه (حسب ترتيب الصفوف المحددة في الإعدادات
+                                    العامة).<br>
+                                    2. سيتم أرشفة عقود السنة الحالية (بكل تواقيعها وصورها) في سجل تاريخ الطالب.<br>
+                                    3. ستصبح حالة جميع الطلاب "بانتظار التوقيع" للسنة الجديدة.<br>
+                                    4. الطلاب في "آخر صف دراسي" سيتم نقلهم تلقائياً للأرشيف.
+                                </div>
+                                <div class="form-group" style="max-width: 500px;">
+                                    <label style="font-weight:700;">مسمى السنة الدراسية القادمة</label>
+                                    <input type="text" id="nextYearLabel" placeholder="مثال: 1447هـ - 2026م"
+                                        style="padding: 12px; font-size: 1.1rem;">
+                                    <small style="color:var(--text-muted)">هذا المسمى سيظهر في العقود الجديدة لولي
+                                        الأمر.</small>
+                                </div>
+                                <button class="btn btn-primary" onclick="UI.startMigration()"
+                                    style="margin-top: 1.5rem; padding: 12px 30px; font-weight: 700;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" style="margin-left: 8px;">
+                                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="8.5" cy="7" r="4"></circle>
+                                        <line x1="20" y1="8" x2="20" y2="14"></line>
+                                        <line x1="23" y1="11" x2="17" y2="11"></line>
+                                    </svg>
+                                    تأفيذ ترحيل الطلاب للسنة القادمة
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Archive Explorer -->
+                        <div class="card">
+                            <div class="card-header"
+                                style="display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <h3 style="font-weight:700;">أرشيف الطلاب المتخرجين والقدامى</h3>
+                                    <p style="font-size:0.85rem; color:var(--text-muted)">الطلاب الذين تم أرشفتهم في
+                                        سنوات سابقة.</p>
+                                </div>
+                                <button class="btn btn-secondary btn-sm" onclick="UI.refreshArchiveTable()">تحديث
+                                    القائمة</button>
+                            </div>
+                            <div class="card-body" style="padding: 1rem;">
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>اسم الطالب</th>
+                                                <th>التخصص/المسار</th>
+                                                <th>آخر صف</th>
+                                                <th>العمليات</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="archiveTableBody">
+                                            <tr>
+                                                <td colspan="4" style="text-align:center;">تحميل بيانات الأرشيف...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1378,6 +1541,13 @@
                     <div class="form-group">
                         <label for="studentName">اسم الطالب</label>
                         <input type="text" id="studentName" required placeholder="أدخل اسم الطالب الكامل">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentNationality">الجنسية</label>
+                        <select id="studentNationality">
+                            <option value="سعودي">سعودي</option>
+                            <option value="غير سعودي">غير سعودي</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="studentTrack">المسار التعليمي</label>
@@ -1443,6 +1613,13 @@
                             <option value="email">البريد الإلكتروني</option>
                             <option value="whatsapp">الواتساب</option>
                             <option value="both">كلاهما</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="registrationType">نوع التسجيل</label>
+                        <select id="registrationType" required>
+                            <option value="existing">منتظم</option>
+                            <option value="mustajid">مستجد</option>
                         </select>
                     </div>
                 </div>
@@ -1769,6 +1946,23 @@
         </div>
     </div>
 
+    <script>
+        // Emergency Logo Recovery
+        document.querySelectorAll('img').forEach(img => {
+            img.onerror = function () {
+                if (this.src.includes('logo.png')) {
+                    console.warn("Logo failed to load, trying fallback...");
+                    // Try to load from Firebase setting or a placeholder if local fails
+                    const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                    if (settings.schoolLogo) {
+                        this.src = settings.schoolLogo;
+                    } else {
+                        this.src = 'https://via.placeholder.com/200x80?text=Dana+AI+School';
+                    }
+                }
+            };
+        });
+    </script>
 </body>
 
 </html>
