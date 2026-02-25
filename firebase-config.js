@@ -300,13 +300,13 @@ const CloudDB = {
 
         console.warn('⚠️ WARNING: Wiping ALL data from cloud...');
 
-        // Remove students, templates, and settings
+        // Remove everything except fonts (they are heavy and usually safe to keep)
         const updates = {};
         updates['students'] = null;
         updates['templates'] = null;
         updates['settings'] = null;
-        // Optionally keep fonts or remove them too
-        // updates['fonts'] = null; 
+        updates['signatures'] = null; // Just in case they are stored here
+        updates['backups'] = null;    // If any backups were saved to cloud
 
         return firebaseDb.ref().update(updates)
             .then(() => {
@@ -315,7 +315,11 @@ const CloudDB = {
             })
             .catch(err => {
                 console.error('Cloud wipe error:', err);
-                return false;
+                // Last resort: try individual removes
+                return firebaseDb.ref('students').remove()
+                    .then(() => firebaseDb.ref('templates').remove())
+                    .then(() => firebaseDb.ref('settings').remove())
+                    .then(() => true);
             });
     }
 };

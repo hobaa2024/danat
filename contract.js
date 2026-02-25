@@ -422,9 +422,11 @@ function renderContractText(contract, student) {
     if (isPdf && (!contract.pdfData || !contract.pdfFields) && student.contractTemplateId) {
         console.log('🔄 PDF data or fields missing, attempting last-resort fetch from cloud...');
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            CloudDB.getContractTemplate(student.contractTemplateId).then(remote => {
+            // Use getContractTemplates and find the one we need since getContractTemplate might not exist
+            CloudDB.getContractTemplates().then(templates => {
+                const remote = templates.find(t => t.id === student.contractTemplateId);
                 if (remote && remote.pdfData) {
-                    console.log('✅ PDF data and fields fetched successfully in last-resort');
+                    console.log('✅ PDF data and fields fetched successfully from cloud list');
                     contract.pdfData = remote.pdfData;
                     contract.pdfFields = remote.pdfFields;
                     renderContractText(contract, student);

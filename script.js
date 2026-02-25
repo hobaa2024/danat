@@ -1512,7 +1512,7 @@ const UI = {
                             </td>
                             <td style="text-align:center; width:50%; vertical-align:bottom;">
                                 <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">توقيع ولي الأمر</p>
-                                ${hasSignature ? `<img src="${student.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
+                                ${hasSignature ? `<img src="${studentData.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
                             </td>
                         </tr>
                     </table>
@@ -1610,10 +1610,13 @@ const UI = {
         }
     },
 
-    async downloadContractPdf(id) {
+    async downloadContractPdf(id, providedStudent = null) {
         try {
-            const students = db.getStudents();
-            const student = students.find(s => s.id === id);
+            let student = providedStudent;
+            if (!student) {
+                const students = db.getStudents();
+                student = students.find(s => s.id === id);
+            }
             if (!student) throw new Error("الطالب غير موجود");
 
             if (typeof UI.showNotification === 'function') UI.showNotification('جاري تحميل العقد...');
@@ -3198,13 +3201,42 @@ ${link}
             }
         } else {
             // Text-based contract
-            const oldStudent = window.currentStudent;
-            window.currentStudent = tempStudent;
-            try {
-                this.downloadContractPdf(studentId);
-            } finally {
-                window.currentStudent = oldStudent;
+            this.downloadContractPdf(studentId, tempStudent);
+        }
+    },
+    async wipeAllData() {
+        if (!confirm('⛔ تحذير أمني هام ⛔\n\nأنت على وشك حذف جميع البيانات (الطلاب، العقود، والإعدادات) من المتصفح ومن الخادم السحابي.\n\nهل أنت متأكد من رغبتك في تصفير النظام بالكامل؟ لا يمكن التراجع عن هذه الخطوة.')) return;
+
+        if (!confirm('تأكيد نهائي: سيتم حذف كل شيء محلياً وسحابياً. هل أنت متأكد 100%؟')) return;
+
+        console.log('🧨 Performing Factory Reset...');
+        this.showNotification('⏳ جاري تصفير النظام...');
+
+        try {
+            // 1. Clear Cloud if possible
+            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                await CloudDB.terminateAndClearData();
+                console.log('✅ Cloud data wiped.');
             }
+
+            // 2. Clear Local Storage & Session Storage
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // 3. Clear IndexedDB (Large PDFs)
+            if (typeof indexedDB !== 'undefined' && indexedDB.deleteDatabase) {
+                indexedDB.deleteDatabase('DanatContractsDB');
+                indexedDB.deleteDatabase('DanaSchoolsDB'); // Older name just in case
+            }
+
+            // 4. Force Reload
+            alert('✅ تم تصفير النظام بالكامل (محلي وسحابي). سيتم توفير الصفحة الآن للبدء من جديد.');
+            window.location.reload();
+        } catch (err) {
+            console.error('Wipe error:', err);
+            alert('حدث خطأ أثناء مسح البيانات: ' + err.message + '\nسيتم محاولة تصفير البيانات المحلية على الأقل.');
+            localStorage.clear();
+            window.location.reload();
         }
     }
 };
