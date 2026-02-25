@@ -285,7 +285,8 @@ async function loadStudentData() {
                             title: student.contractTitle,
                             content: student.contractContent,
                             type: student.contractType || 'text',
-                            pdfData: student.pdfData || null
+                            pdfData: student.pdfData || null,
+                            pdfFields: student.pdfFields || null
                         };
                     } else {
                         const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
@@ -349,7 +350,8 @@ async function loadStudentData() {
                     title: student.contractTitle,
                     content: student.contractContent,
                     type: student.contractType || 'text',
-                    pdfData: student.pdfData || null
+                    pdfData: student.pdfData || null,
+                    pdfFields: student.pdfFields || null
                 };
             } else {
                 const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
@@ -370,7 +372,8 @@ async function loadStudentData() {
                                     title: cloudStudent.contractTitle,
                                     content: cloudStudent.contractContent,
                                     type: cloudStudent.contractType || 'text',
-                                    pdfData: cloudStudent.pdfData || null
+                                    pdfData: cloudStudent.pdfData || null,
+                                    pdfFields: cloudStudent.pdfFields || null
                                 };
                             }
                         }
@@ -415,14 +418,15 @@ function renderContractText(contract, student) {
 
     const isPdf = (contract.type === 'pdf_template') || (contract.content && contract.content.startsWith('قالب PDF:'));
 
-    // FALLBACK: If it's a PDF but data is missing, try fetching it from CloudDB
-    if (isPdf && !contract.pdfData && student.contractTemplateId) {
-        console.log('🔄 PDF data missing, attempting last-resort fetch from cloud...');
+    // FALLBACK: If it's a PDF but data or fields are missing, try fetching it from CloudDB
+    if (isPdf && (!contract.pdfData || !contract.pdfFields) && student.contractTemplateId) {
+        console.log('🔄 PDF data or fields missing, attempting last-resort fetch from cloud...');
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             CloudDB.getContractTemplate(student.contractTemplateId).then(remote => {
                 if (remote && remote.pdfData) {
-                    console.log('✅ PDF data fetched successfully in last-resort');
+                    console.log('✅ PDF data and fields fetched successfully in last-resort');
                     contract.pdfData = remote.pdfData;
+                    contract.pdfFields = remote.pdfFields;
                     renderContractText(contract, student);
                 } else {
                     contractTextDiv.innerHTML = `<div style="padding:40px; text-align:center; color:#e11d48;">

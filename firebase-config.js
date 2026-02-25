@@ -194,14 +194,16 @@ const CloudDB = {
 
     // --- CONTRACT TEMPLATES CLOUD SYNC ---
 
-    getSettings() {
-        if (!firebaseDb) return Promise.resolve(null);
-        return firebaseDb.ref('settings/appSettings').once('value')
-            .then(snapshot => snapshot.val())
-            .catch(err => {
-                console.error('Cloud fetch settings error:', err);
-                return null;
-            });
+    // Listen for settings real-time update
+    listenForSettings(callback) {
+        if (!firebaseDb) return;
+        firebaseDb.ref('settings/appSettings').on('value', snapshot => {
+            const data = snapshot.val();
+            if (data) {
+                console.log('☁️ Settings real-time update received');
+                callback(data);
+            }
+        });
     },
 
     saveSettings(settings) {
@@ -242,6 +244,17 @@ const CloudDB = {
                 console.error('Cloud fetch template error:', err);
                 return null;
             });
+    },
+
+    // Listen for templates real-time update
+    listenForTemplates(callback) {
+        if (!firebaseDb) return;
+        firebaseDb.ref('templates').on('value', snapshot => {
+            const data = snapshot.val();
+            const templates = data ? Object.values(data) : [];
+            console.log('☁️ Templates real-time update received:', templates.length);
+            callback(templates);
+        });
     },
 
     getContractTemplates() {
